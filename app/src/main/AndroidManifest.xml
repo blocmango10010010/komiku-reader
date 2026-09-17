@@ -7,7 +7,7 @@
     <application
         android:name=".KomikuApp"
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@android:drawable/ic_menu_gallery"
         android:label="Komiku Reader"
         android:supportsRtl="true"
         android:theme="@style/Theme.KomikuReader"
