@@ -9,6 +9,9 @@
 
 # Jsoup
 -keep class org.jsoup.** { *; }
+-dontwarn org.jsoup.**
+-dontwarn org.jspecify.**
+-keep class org.jspecify.** { *; }
 
 # Coil
 -dontwarn coil.**
