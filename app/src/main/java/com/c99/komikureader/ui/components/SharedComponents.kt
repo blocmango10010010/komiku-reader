@@ -3,6 +3,8 @@ package com.c99.komikureader.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,15 +32,32 @@ fun MangaCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column {
-            AsyncImage(
-                model = item.thumbnailUrl,
-                contentDescription = item.title,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(190.dp)
-                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                contentScale = ContentScale.Crop
-            )
+            if (item.thumbnailUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = item.thumbnailUrl,
+                    contentDescription = item.title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(190.dp)
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(190.dp)
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                }
+            }
             Column(modifier = Modifier.padding(8.dp)) {
                 Text(
                     text = item.title,

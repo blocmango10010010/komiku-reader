@@ -40,6 +40,11 @@ fun ChapterReaderScreen(
             error = null
             try {
                 chapter = repository.getChapterImages(chapterUrl)
+                if (chapter == null) {
+                    error = "Gagal memuat chapter. Periksa koneksi."
+                    loading = false
+                    return@launch
+                }
                 // Save to history
                 repository.addHistory(
                     slug = slug,

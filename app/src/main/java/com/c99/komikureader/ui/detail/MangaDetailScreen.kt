@@ -41,6 +41,11 @@ fun MangaDetailScreen(
             error = null
             try {
                 detail = repository.getMangaDetail(slug)
+                if (detail == null) {
+                    error = "Gagal memuat data manga. Periksa koneksi."
+                    loading = false
+                    return@launch
+                }
                 isBookmarked = repository.isBookmarked(slug)
             } catch (e: Exception) {
                 error = e.message ?: "Gagal memuat detail"

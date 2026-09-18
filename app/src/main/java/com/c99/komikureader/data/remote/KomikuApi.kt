@@ -7,75 +7,115 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class KomikuApi {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-                .build()
-            chain.proceed(request)
-        }
-        .build()
+    private val client by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                    .build()
+                chain.proceed(request)
+            }
+            .build()
+    }
 
     private val baseUrl = "https://komiku.org"
 
-    private suspend fun fetchDoc(url: String): Document = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).execute()
-        Jsoup.parse(response.body?.string() ?: "", url)
+    private suspend fun fetchDoc(url: String): Document? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext null
+            Jsoup.parse(body, url)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // ==================== HOME ====================
 
     suspend fun getHomeRanking(): List<MangaItem> = withContext(Dispatchers.IO) {
-        val doc = fetchDoc(baseUrl)
+        val doc = fetchDoc(baseUrl) ?: return@withContext emptyList()
         val items = mutableListOf<MangaItem>()
+        val seen = mutableSetOf<String>()
 
-        // Parse ranking section (ls4 articles)
-        val rankingSection = doc.select("section#Rekomendasi_Komik .ls4")
-        for (article in rankingSection) {
-            val link = article.select("a[href*=/manga/]").first() ?: continue
-            val href = link.attr("href")
+        val candidates = doc.select(
+            "section#Rekomendasi_Komik .ls4 a[href*=/manga/], " +
+            ".rank-panel a[href*=/manga/], " +
+            "article.ls4 a[href*=/manga/]"
+        )
+
+        for (link in candidates) {
+            val href = link.attr("href").trim()
             val slug = extractSlug(href)
-            val title = link.select("h4").text().ifEmpty { link.attr("title") }
-            val thumb = article.select("img").first()?.attr("data-src")
-                ?: article.select("img").first()?.attr("src")
-                ?: ""
+            if (slug.isEmpty() || slug in seen) continue
+            seen.add(slug)
 
-            if (title.isNotEmpty() && slug.isNotEmpty()) {
+            val title = link.select("h4, h3, span").text().trim()
+                .ifEmpty { link.attr("title").trim() }
+                .ifEmpty { link.parents().select("h4, h3").text().trim() }
+            if (title.isEmpty()) continue
+
+            val parent = link.parent()?.parent() ?: link.parent()
+            val thumb = parent?.select("img")?.firstOrNull()?.let {
+                it.attr("data-src").ifEmpty { it.attr("src") }
+            } ?: ""
+
+            items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
+        }
+
+        // Fallback: any manga link with image on home page
+        if (items.isEmpty()) {
+            val allManga = doc.select("a[href*=/manga/]")
+            for (link in allManga) {
+                val href = link.attr("href").trim()
+                val slug = extractSlug(href)
+                if (slug.isEmpty() || slug in seen) continue
+                seen.add(slug)
+
+                val title = link.select("h4,h3").text().trim()
+                    .ifEmpty { link.text().trim() }
+                if (title.isEmpty() || title.length > 100) continue
+
+                val thumb = link.select("img").firstOrNull()?.let {
+                    it.attr("data-src").ifEmpty { it.attr("src") }
+                } ?: ""
+
                 items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
+                if (items.size >= 20) break
             }
         }
         items
     }
 
     suspend fun getHomeLatest(): List<MangaItem> = withContext(Dispatchers.IO) {
-        val doc = fetchDoc(baseUrl)
+        val doc = fetchDoc(baseUrl) ?: return@withContext emptyList()
         val items = mutableListOf<MangaItem>()
-
-        // Latest updates - find all manga links with thumbnails on homepage
-        // Usually in sections after ranking
-        val allArticles = doc.select("article.ls4, div.ls4")
         val seen = mutableSetOf<String>()
 
-        for (article in allArticles) {
-            val link = article.select("a[href*=/manga/]").first() ?: continue
-            val href = link.attr("href")
-            val slug = extractSlug(href)
-            if (slug in seen) continue
-            seen.add(slug)
+        val allSections = doc.select("section")
+        for (section in allSections) {
+            val links = section.select("a[href*=/manga/]")
+            for (link in links) {
+                val href = link.attr("href").trim()
+                val slug = extractSlug(href)
+                if (slug.isEmpty() || slug in seen) continue
+                seen.add(slug)
 
-            val title = link.select("h4, h3").text().ifEmpty { link.attr("title") }
-            val thumb = article.select("img").first()?.attr("data-src")
-                ?: article.select("img").first()?.attr("src")
-                ?: ""
+                val title = link.select("h4,h3").text().trim()
+                    .ifEmpty { link.text().trim() }
+                if (title.isEmpty() || title.length > 100) continue
 
-            if (title.isNotEmpty() && slug.isNotEmpty()) {
+                val thumb = link.select("img").firstOrNull()?.let {
+                    it.attr("data-src").ifEmpty { it.attr("src") }
+                } ?: ""
+
                 items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
             }
         }
@@ -84,42 +124,75 @@ class KomikuApi {
 
     // ==================== MANGA LISTING ====================
 
-    suspend fun getMangaList(page: Int = 1): List<MangaItem> = withContext(Dispatchers.IO) {
-        val url = if (page <= 1) "$baseUrl/daftar-komik/"
-        else "$baseUrl/daftar-komik/page/$page/"
+    suspend fun getMangaList(page: Int = 1, type: String = ""): List<MangaItem> = withContext(Dispatchers.IO) {
+        val url = buildString {
+            append(baseUrl)
+            if (type.isNotEmpty()) {
+                append("/pustaka/?tipe=$type")
+                if (page > 1) append("&page=$page")
+            } else {
+                if (page <= 1) append("/daftar-komik/")
+                else append("/daftar-komik/page/$page/")
+            }
+        }
 
-        val doc = fetchDoc(url)
+        val doc = fetchDoc(url) ?: return@withContext emptyList()
         val items = mutableListOf<MangaItem>()
+        val seen = mutableSetOf<String>()
 
-        val mangaBlocks = doc.select("div.bge")
-        if (mangaBlocks.isEmpty()) {
-            // Fallback: parse h4 links directly
-            val h4Links = doc.select("h4 a[href*=/manga/]")
+        val h4Links = doc.select("h4 a[href*=/manga/]")
+        if (h4Links.isNotEmpty()) {
             for (link in h4Links) {
-                val href = link.attr("href")
+                val href = link.attr("href").trim()
                 val slug = extractSlug(href)
+                if (slug.isEmpty() || slug in seen) continue
+                seen.add(slug)
+
                 val title = link.text().trim()
-                // Find thumbnail in parent
-                val thumb = link.parents().select("img").first()?.attr("data-src")
-                    ?: link.parents().select("img").first()?.attr("src")
+                if (title.isEmpty()) continue
+
+                val thumb = link.parents().select("img[data-src]").firstOrNull()
+                    ?.attr("data-src")
+                    ?: link.parents().select("img[src]").firstOrNull()
+                        ?.attr("src")
                     ?: ""
-                if (title.isNotEmpty()) {
-                    items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
-                }
+
+                items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
             }
         } else {
-            for (block in mangaBlocks) {
-                val link = block.select("a[href*=/manga/]").first() ?: continue
-                val href = link.attr("href")
+            val blocks = doc.select("div.bge, article")
+            for (block in blocks) {
+                val link = block.select("a[href*=/manga/]").firstOrNull() ?: continue
+                val href = link.attr("href").trim()
                 val slug = extractSlug(href)
-                val title = block.select("h4, h3").text().trim().ifEmpty { link.attr("title") }
-                val thumb = block.select("img").first()?.attr("data-src")
-                    ?: block.select("img").first()?.attr("src")
-                    ?: ""
+                if (slug.isEmpty() || slug in seen) continue
+                seen.add(slug)
 
-                if (title.isNotEmpty() && slug.isNotEmpty()) {
-                    items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
-                }
+                val title = block.select("h4, h3").text().trim()
+                    .ifEmpty { link.text().trim() }
+                if (title.isEmpty()) continue
+
+                val thumb = block.select("img").firstOrNull()?.let {
+                    it.attr("data-src").ifEmpty { it.attr("src") }
+                } ?: ""
+
+                items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
+            }
+        }
+
+        if (items.isEmpty()) {
+            val allLinks = doc.select("a[href*=/manga/]")
+            for (link in allLinks) {
+                val href = link.attr("href").trim()
+                val slug = extractSlug(href)
+                if (slug.isEmpty() || slug in seen) continue
+                seen.add(slug)
+
+                val title = link.text().trim()
+                if (title.isEmpty() || title.length > 100) continue
+
+                items.add(MangaItem(title = title, slug = slug, thumbnailUrl = ""))
+                if (items.size >= 50) break
             }
         }
         items
@@ -128,58 +201,51 @@ class KomikuApi {
     // ==================== SEARCH ====================
 
     suspend fun search(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
-        val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+        val encoded = URLEncoder.encode(query, "UTF-8")
         val url = "$baseUrl/?s=$encoded&post_type=manga"
-        val doc = fetchDoc(url)
-
+        val doc = fetchDoc(url) ?: return@withContext emptyList()
         val results = mutableListOf<SearchResult>()
+        val seenSlugs = mutableSetOf<String>()
+
         val blocks = doc.select("div.bge")
-
         for (block in blocks) {
-            val kanDiv = block.select("div.kan").first() ?: continue
-            val chapterLink = block.select("a[href*=-chapter-]").first() ?: continue
+            val chapterLink = block.select("a[href*=-chapter-]").firstOrNull() ?: continue
             val chapterHref = chapterLink.attr("href")
-
-            // Extract manga slug from chapter URL: /{slug}-chapter-{num}/
             val slug = extractMangaSlugFromChapter(chapterHref)
-            if (slug.isEmpty()) continue
+            if (slug.isEmpty() || slug in seenSlugs) continue
+            seenSlugs.add(slug)
 
-            // Get title (often "Untitled" in search results, use slug for display)
-            val title = kanDiv.select("h3").text().trim()
-                .let { if (it == "Untitled" || it.isEmpty()) slugToTitle(slug) else it }
+            val kanDiv = block.select("div.kan").firstOrNull()
+            val title = kanDiv?.select("h3")?.text()?.trim()?.let {
+                if (it == "Untitled" || it.isEmpty()) slugToTitle(slug) else it
+            } ?: slugToTitle(slug)
 
-            val firstChapter = block.select("div.new1").first()?.select("a")?.first()?.attr("href")
-            val latestChapter = block.select("div.new1").last()?.select("a")?.last()?.attr("href")
-            val updated = kanDiv.select("p").first()?.text()?.trim() ?: ""
+            val firstChapter = block.select("div.new1").firstOrNull()?.select("a")?.lastOrNull()?.attr("href")
+            val latestChapter = block.select("div.new1").lastOrNull()?.select("a")?.lastOrNull()?.attr("href")
+            val updated = kanDiv?.select("p")?.firstOrNull()?.text()?.trim() ?: ""
 
-            results.add(
-                SearchResult(
-                    mangaSlug = slug,
-                    displayTitle = title,
-                    firstChapterUrl = firstChapter,
-                    latestChapterUrl = latestChapter,
-                    updated = updated
-                )
-            )
+            results.add(SearchResult(
+                mangaSlug = slug, displayTitle = title,
+                firstChapterUrl = firstChapter, latestChapterUrl = latestChapter,
+                updated = updated
+            ))
         }
-        // Deduplicate by slug
-        results.distinctBy { it.mangaSlug }
+        results
     }
 
     // ==================== MANGA DETAIL ====================
 
-    suspend fun getMangaDetail(slug: String): MangaDetail = withContext(Dispatchers.IO) {
+    suspend fun getMangaDetail(slug: String): MangaDetail? = withContext(Dispatchers.IO) {
         val url = "$baseUrl/manga/$slug/"
-        val doc = fetchDoc(url)
+        val doc = fetchDoc(url) ?: return@withContext null
 
         val title = doc.select("h1").text().trim().ifEmpty {
             doc.select("title").text().replace(" - Komiku", "").trim()
         }
 
-        // Parse info table
         val infoTable = doc.select("table.inftable")
         var alternativeTitle = ""
-        var type = ""
+        var mangaType = ""
         var genre = ""
         var author = ""
         var status = ""
@@ -191,8 +257,8 @@ class KomikuApi {
                 val label = cells[0].text().trim().lowercase()
                 val value = cells[1].text().trim()
                 when {
-                    label.contains("alternatif") || label.contains("alternative") -> alternativeTitle = value
-                    label.contains("tipe") -> type = value
+                    label.contains("alternatif") -> alternativeTitle = value
+                    label.contains("tipe") -> mangaType = value
                     label.contains("genre") -> genre = value
                     label.contains("author") || label.contains("pengarang") -> author = value
                     label.contains("status") -> status = value
@@ -201,105 +267,80 @@ class KomikuApi {
             }
         }
 
-        // Synopsis
-        val synopsis = doc.select("section#Sinopsis p").text()
-            .ifEmpty { doc.select("article p, .desc p").text() }
+        val synopsis = doc.select("section#Sinopsis p, article p").text()
+            .ifEmpty { doc.select("meta[name=description]").attr("content") }
 
-        // Thumbnail
         val thumbnail = doc.select("meta[property=og:image]").attr("content")
             .ifEmpty {
-                doc.select("img[src*=/uploads/manga/]").first()?.attr("src")
-                    ?: doc.select("img[data-src*=/uploads/manga/]").first()?.attr("data-src")
+                doc.select("img[src*=/uploads/manga/]").firstOrNull()?.attr("src")
+                    ?: doc.select("img[data-src*=/uploads/manga/]").firstOrNull()?.attr("data-src")
+                    ?: doc.select("img[src*=/thumbnail/]").firstOrNull()?.attr("src")
                     ?: ""
             }
 
-        // Views
-        val pembaca = doc.select("td:contains(Minggu ini)").text()
-        val totalViews = pembaca.substringBefore("views,").replace("Total:", "").trim()
-        val weeklyViews = pembaca.substringAfter("Minggu ini:").replace("views", "").trim()
-
-        // Chapter list
         val chapters = mutableListOf<ChapterItem>()
         val chapterTable = doc.select("table#Daftar_Chapter")
         for (row in chapterTable.select("tr[itemprop=itemListElement]")) {
-            val link = row.select("a[itemprop=url]").first() ?: continue
+            val link = row.select("a[itemprop=url]").firstOrNull() ?: continue
             val chapTitle = link.select("span[itemprop=name]").text().trim()
                 .ifEmpty { link.text().trim() }
-            val chapUrl = link.attr("href")
+            val chapUrl = link.attr("href").trim()
             val date = row.select("td.tanggalseries").text().trim()
-
-            chapters.add(ChapterItem(title = chapTitle, url = chapUrl, date = date))
+            if (chapTitle.isNotEmpty()) {
+                chapters.add(ChapterItem(title = chapTitle, url = chapUrl, date = date))
+            }
         }
 
         MangaDetail(
-            title = title,
-            slug = slug,
-            alternativeTitle = alternativeTitle,
-            type = type,
-            genre = genre,
-            author = author,
-            status = status,
-            rating = rating,
-            synopsis = synopsis,
-            thumbnailUrl = thumbnail,
-            totalViews = totalViews,
-            weeklyViews = weeklyViews,
-            chapters = chapters
+            title = title, slug = slug, alternativeTitle = alternativeTitle,
+            type = mangaType, genre = genre, author = author,
+            status = status, rating = rating, synopsis = synopsis,
+            thumbnailUrl = thumbnail, chapters = chapters
         )
     }
 
     // ==================== CHAPTER READER ====================
 
-    suspend fun getChapterImages(chapterUrl: String): ChapterPage = withContext(Dispatchers.IO) {
+    suspend fun getChapterImages(chapterUrl: String): ChapterPage? = withContext(Dispatchers.IO) {
         val url = if (chapterUrl.startsWith("http")) chapterUrl else "$baseUrl$chapterUrl"
-        val doc = fetchDoc(url)
+        val doc = fetchDoc(url) ?: return@withContext null
 
         val chapterTitle = doc.select("h1").text().trim()
             .ifEmpty { doc.select("title").text().replace(" - Komiku", "").trim() }
 
-        // Extract manga title from og:title or breadcrumbs
         val ogTitle = doc.select("meta[property=og:title]").attr("content")
         val mangaTitle = ogTitle.substringBefore(" Chapter").trim()
-            .ifEmpty { doc.select(".breadcrumb a, nav a[href*=/manga/]").last()?.text()?.trim() ?: "" }
+            .ifEmpty { doc.select("a[href*=/manga/]").lastOrNull()?.text()?.trim() ?: "" }
 
-        // Find all manga images
         val imageUrls = mutableListOf<String>()
-        val allImages = doc.select("img")
-        for (img in allImages) {
-            val src = img.attr("src")
+        for (img in doc.select("img")) {
+            val src = img.attr("src").trim()
             if (src.isNotEmpty() && isMangaImage(src)) {
                 imageUrls.add(src)
             }
         }
 
-        // Navigation
-        val prevLink = doc.select("a:containsOwn(Prev), a:containsOwn(Sebelumnya), a.rel-prev").first()
-        val nextLink = doc.select("a:containsOwn(Next), a:containsOwn(Selanjutnya), a.rel-next").first()
+        val prevLink = doc.select("a[rel=prev], a:contains(Prev), a:contains(Sebelumnya)").firstOrNull()
+        val nextLink = doc.select("a[rel=next], a:contains(Next), a:contains(Selanjutnya)").firstOrNull()
 
         ChapterPage(
-            mangaTitle = mangaTitle,
-            chapterTitle = chapterTitle,
+            mangaTitle = mangaTitle, chapterTitle = chapterTitle,
             imageUrls = imageUrls,
-            prevChapterUrl = prevLink?.attr("href"),
-            nextChapterUrl = nextLink?.attr("href")
+            prevChapterUrl = prevLink?.attr("href")?.trim(),
+            nextChapterUrl = nextLink?.attr("href")?.trim()
         )
     }
 
     // ==================== HELPERS ====================
 
     private fun extractSlug(href: String): String {
-        // /manga/{slug}/ -> {slug}
         return href.removePrefix("/").removeSuffix("/")
             .removePrefix("manga/")
-            .split("/").firstOrNull() ?: ""
+            .split("/").firstOrNull()?.trim() ?: ""
     }
 
     private fun extractMangaSlugFromChapter(chapterHref: String): String {
-        // /{slug}-chapter-{num}/ -> {slug}
         val path = chapterHref.removePrefix("/").removeSuffix("/")
-        val idx = path.lastIndexOf("-chapter-")
-        if (idx < 0) return ""
-        // Try with -chapter-{num} pattern
         val match = Regex("^(.+)-chapter-\\d+").find(path)
         return match?.groupValues?.get(1) ?: ""
     }
@@ -313,7 +354,6 @@ class KomikuApi {
 
     private fun isMangaImage(src: String): Boolean {
         val lower = src.lowercase()
-        // Match komiku image patterns
         return (lower.contains("komiku.to/upload") ||
                 lower.contains("komiku.org/upload") ||
                 lower.contains("img.komiku")) &&

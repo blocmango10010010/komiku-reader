@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.c99.komikureader.data.model.MangaItem
@@ -41,7 +42,7 @@ fun HomeScreen(
                 ranking = repository.getHomeRanking()
                 latest = repository.getHomeLatest()
             } catch (e: Exception) {
-                error = e.message ?: "Gagal memuat data"
+                error = e.message ?: "Gagal memuat data. Periksa koneksi internet."
             }
             loading = false
         }
@@ -70,36 +71,69 @@ fun HomeScreen(
         }
 
         if (error != null) {
-            Column(modifier = Modifier.padding(padding).padding(32.dp)) {
+            Column(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.WifiOff, contentDescription = null, modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(error!!, color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = { loadData() }) { Text("Coba Lagi") }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(onClick = onBrowseClick) { Text("Buka Semua Komik") }
             }
             return@Scaffold
         }
+
+        val isEmpty = ranking.isEmpty() && latest.isEmpty()
 
         LazyColumn(
             modifier = Modifier.padding(padding),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-            // Browse button row
+            // Navigation chips
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     FilterChip(
-                        selected = false,
+                        selected = true,
                         onClick = onBrowseClick,
-                        label = { Text("Semua Komik") },
+                        label = { Text("📚 Semua Komik") },
                         leadingIcon = { Icon(Icons.Default.GridView, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                     FilterChip(
                         selected = false,
                         onClick = onLibraryClick,
-                        label = { Text("Koleksi Saya") },
+                        label = { Text("⭐ Koleksi") },
                         leadingIcon = { Icon(Icons.Default.Bookmarks, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
+                }
+            }
+
+            // Empty state
+            if (isEmpty) {
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Compass, contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Jelajahi ribuan komik", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Manga, Manhwa, dan Manhua Bahasa Indonesia",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Button(onClick = onBrowseClick) { Text("📚 Jelajahi Sekarang") }
+                    }
                 }
             }
 

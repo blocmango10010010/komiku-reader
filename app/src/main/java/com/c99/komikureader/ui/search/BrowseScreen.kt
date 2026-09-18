@@ -29,12 +29,13 @@ fun BrowseScreen(
     var loading by remember { mutableStateOf(true) }
     var loadingMore by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(true) }
+    var selectedType by remember { mutableStateOf("") } // "" = semua
     val scope = rememberCoroutineScope()
 
-    fun loadPage(p: Int) {
+    fun loadPage(p: Int, filterType: String = "") {
         scope.launch {
             try {
-                val items = repository.getMangaList(p)
+                val items = repository.getMangaList(p, type = filterType)
                 if (p == 1) {
                     mangaList = items
                 } else {
@@ -42,7 +43,7 @@ fun BrowseScreen(
                 }
                 hasMore = items.size >= 50
             } catch (e: Exception) {
-                // Keep existing data, show error
+                // Keep existing data
             }
             loading = false
             loadingMore = false
@@ -53,26 +54,83 @@ fun BrowseScreen(
         if (!loadingMore && hasMore) {
             loadingMore = true
             page++
-            loadPage(page)
+            loadPage(page, selectedType)
         }
+    }
+
+    fun switchType(newType: String) {
+        if (newType == selectedType) return
+        selectedType = newType
+        page = 1
+        loading = true
+        mangaList = emptyList()
+        loadPage(1, newType)
     }
 
     LaunchedEffect(Unit) { loadPage(1) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Semua Komik") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Kembali")
+            Column {
+                TopAppBar(
+                    title = { Text("Semua Komik") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Kembali")
+                        }
                     }
+                )
+                // Type filter chips
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedType == "",
+                        onClick = { switchType("") },
+                        label = { Text("Semua") }
+                    )
+                    FilterChip(
+                        selected = selectedType == "manga",
+                        onClick = { switchType("manga") },
+                        label = { Text("🇯🇵 Manga") }
+                    )
+                    FilterChip(
+                        selected = selectedType == "manhwa",
+                        onClick = { switchType("manhwa") },
+                        label = { Text("🇰🇷 Manhwa") }
+                    )
+                    FilterChip(
+                        selected = selectedType == "manhua",
+                        onClick = { switchType("manhua") },
+                        label = { Text("🇨🇳 Manhua") }
+                    )
                 }
-            )
+            }
         }
     ) { padding ->
         if (loading) {
             LoadingView(modifier = Modifier.padding(padding))
+            return@Scaffold
+        }
+
+        if (mangaList.isEmpty()) {
+            Box(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Tidak ada komik ditemukan",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(onClick = { switchType("") }) {
+                        Text("Tampilkan Semua")
+                    }
+                }
+            }
             return@Scaffold
         }
 

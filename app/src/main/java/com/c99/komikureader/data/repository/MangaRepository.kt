@@ -13,7 +13,7 @@ class MangaRepository(
     // Remote
     suspend fun getHomeRanking() = api.getHomeRanking()
     suspend fun getHomeLatest() = api.getHomeLatest()
-    suspend fun getMangaList(page: Int = 1) = api.getMangaList(page)
+    suspend fun getMangaList(page: Int = 1, type: String = "") = api.getMangaList(page, type)
     suspend fun search(query: String) = api.search(query)
     suspend fun getMangaDetail(slug: String) = api.getMangaDetail(slug)
     suspend fun getChapterImages(chapterUrl: String) = api.getChapterImages(chapterUrl)
