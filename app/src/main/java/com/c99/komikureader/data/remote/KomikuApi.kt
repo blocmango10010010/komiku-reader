@@ -11,16 +11,22 @@ import java.util.concurrent.TimeUnit
 
 class KomikuApi {
 
-    private val cookieJar = CookieJar { _ ->
-        mutableListOf<Cookie>().also { cookies ->
-            // Persist DDoS-Guard cookies across requests
-            lastCookies?.let { cookies.addAll(it) }
-        }.also {
-            lastCookies = it
+    private val cookieJar = object : CookieJar {
+        private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> {
+            return cookieStore[url.host]?.toList() ?: emptyList()
+        }
+
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            cookieStore.getOrPut(url.host) { mutableListOf() }.let { stored ->
+                cookies.forEach { newCookie ->
+                    stored.removeAll { it.name == newCookie.name }
+                    stored.add(newCookie)
+                }
+            }
         }
     }
-
-    private var lastCookies: List<Cookie>? = null
 
     private val client by lazy {
         OkHttpClient.Builder()
