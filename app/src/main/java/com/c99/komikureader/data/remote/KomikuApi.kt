@@ -358,7 +358,7 @@ class KomikuApi {
                 updated = updated
             ))
         }
-        results
+        return results
     }
 
     // ==================== HELPERS ====================

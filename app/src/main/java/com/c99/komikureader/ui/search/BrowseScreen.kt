@@ -119,9 +119,8 @@ fun BrowseScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
-                Spacer(modifier = Modifier.height(16.dp))
+                Text("⚠️", style = MaterialTheme.typography.displaySmall)
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(errorMsg!!, color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = { loadPage(1, selectedType) }) { Text("Coba Lagi") }
