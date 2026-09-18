@@ -29,12 +29,14 @@ fun BrowseScreen(
     var loading by remember { mutableStateOf(true) }
     var loadingMore by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(true) }
-    var selectedType by remember { mutableStateOf("") } // "" = semua
+    var selectedType by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun loadPage(p: Int, filterType: String = "") {
         scope.launch {
             try {
+                errorMsg = null
                 val items = repository.getMangaList(p, type = filterType)
                 if (p == 1) {
                     mangaList = items
@@ -43,7 +45,9 @@ fun BrowseScreen(
                 }
                 hasMore = items.size >= 50
             } catch (e: Exception) {
-                // Keep existing data
+                if (p == 1) {
+                    errorMsg = e.message ?: "Gagal memuat data"
+                }
             }
             loading = false
             loadingMore = false
@@ -109,6 +113,22 @@ fun BrowseScreen(
             }
         }
     ) { padding ->
+        if (errorMsg != null) {
+            Column(
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.ErrorOutline, contentDescription = null, modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(errorMsg!!, color = MaterialTheme.colorScheme.error)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { loadPage(1, selectedType) }) { Text("Coba Lagi") }
+            }
+            return@Scaffold
+        }
+
         if (loading) {
             LoadingView(modifier = Modifier.padding(padding))
             return@Scaffold
