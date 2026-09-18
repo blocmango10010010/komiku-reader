@@ -119,7 +119,7 @@ fun BrowseScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.Default.ErrorOutline, contentDescription = null, modifier = Modifier.size(64.dp),
+                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(64.dp),
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(errorMsg!!, color = MaterialTheme.colorScheme.error)
