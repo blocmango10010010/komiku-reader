@@ -122,7 +122,7 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth().padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.Compass, contentDescription = null,
+                        Icon(Icons.Default.AutoStories, contentDescription = null,
                             modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
                         Spacer(modifier = Modifier.height(16.dp))
