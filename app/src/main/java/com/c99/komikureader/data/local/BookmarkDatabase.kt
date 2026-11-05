@@ -1,14 +1,17 @@
 package com.c99.komikureader.data.local
 
+import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class BookmarkDatabase(context: Context) : SQLiteOpenHelper(context, "komiku_bookmarks.db", null, 2) {
+class BookmarkDatabase(context: Context) : SQLiteOpenHelper(context, "komiku_bookmarks.db", null, 3) {
 
     companion object {
         const val TABLE_BOOKMARKS = "bookmarks"
         const val TABLE_HISTORY = "history"
+        private const val BOOKMARK_COLUMNS = "slug, title, thumbnail_url, type, status, added_at, last_chapter_url, has_update"
+        private const val HISTORY_COLUMNS = "slug, chapter_url, chapter_title, manga_title, read_at, last_page"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -19,7 +22,9 @@ class BookmarkDatabase(context: Context) : SQLiteOpenHelper(context, "komiku_boo
                 thumbnail_url TEXT DEFAULT '',
                 type TEXT DEFAULT '',
                 status TEXT DEFAULT '',
-                added_at INTEGER NOT NULL
+                added_at INTEGER NOT NULL,
+                last_chapter_url TEXT DEFAULT '',
+                has_update INTEGER DEFAULT 0
             )
         """)
 
@@ -30,29 +35,37 @@ class BookmarkDatabase(context: Context) : SQLiteOpenHelper(context, "komiku_boo
                 chapter_title TEXT NOT NULL,
                 manga_title TEXT NOT NULL,
                 read_at INTEGER NOT NULL,
+                last_page INTEGER DEFAULT 0,
                 PRIMARY KEY (slug, chapter_url)
             )
         """)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Only the pre-release v1 schema is rebuilt; future versions must add real migrations
-        // here so users keep their bookmarks and history.
+        // The pre-release v1 schema is rebuilt; every later version must migrate in place.
         if (oldVersion < 2) {
             db.execSQL("DROP TABLE IF EXISTS $TABLE_BOOKMARKS")
             db.execSQL("DROP TABLE IF EXISTS $TABLE_HISTORY")
             onCreate(db)
+            return
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE $TABLE_BOOKMARKS ADD COLUMN last_chapter_url TEXT DEFAULT ''")
+            db.execSQL("ALTER TABLE $TABLE_BOOKMARKS ADD COLUMN has_update INTEGER DEFAULT 0")
+            db.execSQL("ALTER TABLE $TABLE_HISTORY ADD COLUMN last_page INTEGER DEFAULT 0")
         }
     }
 
     // --- Bookmarks ---
 
-    fun addBookmark(slug: String, title: String, thumbnailUrl: String = "", type: String = "", status: String = "") {
-        val db = writableDatabase
-        db.execSQL("""
-            INSERT OR REPLACE INTO $TABLE_BOOKMARKS (slug, title, thumbnail_url, type, status, added_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, arrayOf(slug, title, thumbnailUrl, type, status, System.currentTimeMillis()))
+    fun addBookmark(
+        slug: String, title: String, thumbnailUrl: String = "", type: String = "",
+        status: String = "", lastChapterUrl: String = ""
+    ) {
+        writableDatabase.execSQL("""
+            INSERT OR REPLACE INTO $TABLE_BOOKMARKS ($BOOKMARK_COLUMNS)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        """, arrayOf(slug, title, thumbnailUrl, type, status, System.currentTimeMillis(), lastChapterUrl))
     }
 
     fun removeBookmark(slug: String) {
@@ -68,7 +81,7 @@ class BookmarkDatabase(context: Context) : SQLiteOpenHelper(context, "komiku_boo
 
     fun getAllBookmarks(): List<BookmarkEntry> {
         val cursor = readableDatabase.rawQuery(
-            "SELECT * FROM $TABLE_BOOKMARKS ORDER BY added_at DESC", null
+            "SELECT $BOOKMARK_COLUMNS FROM $TABLE_BOOKMARKS ORDER BY has_update DESC, added_at DESC", null
         )
         val results = mutableListOf<BookmarkEntry>()
         cursor.use {
@@ -77,66 +90,97 @@ class BookmarkDatabase(context: Context) : SQLiteOpenHelper(context, "komiku_boo
                     BookmarkEntry(
                         slug = it.getString(0),
                         title = it.getString(1),
-                        thumbnailUrl = it.getString(2),
-                        type = it.getString(3),
-                        status = it.getString(4),
-                        addedAt = it.getLong(5)
+                        thumbnailUrl = it.getString(2) ?: "",
+                        type = it.getString(3) ?: "",
+                        status = it.getString(4) ?: "",
+                        addedAt = it.getLong(5),
+                        lastChapterUrl = it.getString(6) ?: "",
+                        hasUpdate = it.getInt(7) != 0
                     )
                 )
             }
         }
         return results
+    }
+
+    /** Records the newest known chapter; [hasUpdate] flags it as unseen in the library. */
+    fun updateBookmarkLatest(slug: String, latestChapterUrl: String, hasUpdate: Boolean) {
+        val values = ContentValues().apply {
+            put("last_chapter_url", latestChapterUrl)
+            put("has_update", if (hasUpdate) 1 else 0)
+        }
+        writableDatabase.update(TABLE_BOOKMARKS, values, "slug = ?", arrayOf(slug))
     }
 
     // --- History ---
 
     fun addHistory(slug: String, chapterUrl: String, chapterTitle: String, mangaTitle: String) {
         val db = writableDatabase
-        db.execSQL("""
-            INSERT OR REPLACE INTO $TABLE_HISTORY (slug, chapter_url, chapter_title, manga_title, read_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, arrayOf(slug, chapterUrl, chapterTitle, mangaTitle, System.currentTimeMillis()))
+        val values = ContentValues().apply {
+            put("chapter_title", chapterTitle)
+            put("manga_title", mangaTitle)
+            put("read_at", System.currentTimeMillis())
+        }
+        // Update-then-insert keeps last_page; SQLite UPSERT needs API 30+.
+        val updated = db.update(TABLE_HISTORY, values, "slug = ? AND chapter_url = ?", arrayOf(slug, chapterUrl))
+        if (updated == 0) {
+            values.put("slug", slug)
+            values.put("chapter_url", chapterUrl)
+            values.put("last_page", 0)
+            db.insert(TABLE_HISTORY, null, values)
+        }
+    }
+
+    fun updateLastPage(slug: String, chapterUrl: String, page: Int) {
+        val values = ContentValues().apply { put("last_page", page) }
+        writableDatabase.update(TABLE_HISTORY, values, "slug = ? AND chapter_url = ?", arrayOf(slug, chapterUrl))
+    }
+
+    fun getLastPage(slug: String, chapterUrl: String): Int {
+        val cursor = readableDatabase.rawQuery(
+            "SELECT last_page FROM $TABLE_HISTORY WHERE slug = ? AND chapter_url = ?",
+            arrayOf(slug, chapterUrl)
+        )
+        return cursor.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
+    fun getReadChapterUrls(slug: String): Set<String> {
+        val cursor = readableDatabase.rawQuery(
+            "SELECT chapter_url FROM $TABLE_HISTORY WHERE slug = ?", arrayOf(slug)
+        )
+        val urls = mutableSetOf<String>()
+        cursor.use { while (it.moveToNext()) urls.add(it.getString(0)) }
+        return urls
     }
 
     fun getLastRead(slug: String): HistoryEntry? {
         val cursor = readableDatabase.rawQuery(
-            "SELECT * FROM $TABLE_HISTORY WHERE slug = ? ORDER BY read_at DESC LIMIT 1",
+            "SELECT $HISTORY_COLUMNS FROM $TABLE_HISTORY WHERE slug = ? ORDER BY read_at DESC LIMIT 1",
             arrayOf(slug)
         )
-        return cursor.use {
-            if (it.moveToFirst()) {
-                HistoryEntry(
-                    slug = it.getString(0),
-                    chapterUrl = it.getString(1),
-                    chapterTitle = it.getString(2),
-                    mangaTitle = it.getString(3),
-                    readAt = it.getLong(4)
-                )
-            } else null
-        }
+        return cursor.use { if (it.moveToFirst()) it.toHistoryEntry() else null }
     }
 
-    fun getAllHistory(): List<HistoryEntry> {
+    /** Latest chapter read per manga, newest first. */
+    fun getAllHistory(limit: Int = 50): List<HistoryEntry> {
+        // SQLite returns the row holding MAX() for bare columns, so each manga yields its latest chapter.
         val cursor = readableDatabase.rawQuery(
-            "SELECT DISTINCT slug, chapter_url, chapter_title, manga_title, MAX(read_at) as read_at " +
-            "FROM $TABLE_HISTORY GROUP BY slug ORDER BY read_at DESC LIMIT 50", null
+            "SELECT slug, chapter_url, chapter_title, manga_title, MAX(read_at) AS read_at, last_page " +
+            "FROM $TABLE_HISTORY GROUP BY slug ORDER BY read_at DESC LIMIT $limit", null
         )
         val results = mutableListOf<HistoryEntry>()
-        cursor.use {
-            while (it.moveToNext()) {
-                results.add(
-                    HistoryEntry(
-                        slug = it.getString(0),
-                        chapterUrl = it.getString(1),
-                        chapterTitle = it.getString(2),
-                        mangaTitle = it.getString(3),
-                        readAt = it.getLong(4)
-                    )
-                )
-            }
-        }
+        cursor.use { while (it.moveToNext()) results.add(it.toHistoryEntry()) }
         return results
     }
+
+    private fun android.database.Cursor.toHistoryEntry() = HistoryEntry(
+        slug = getString(0),
+        chapterUrl = getString(1),
+        chapterTitle = getString(2),
+        mangaTitle = getString(3),
+        readAt = getLong(4),
+        lastPage = getInt(5)
+    )
 }
 
 data class BookmarkEntry(
@@ -145,7 +189,9 @@ data class BookmarkEntry(
     val thumbnailUrl: String = "",
     val type: String = "",
     val status: String = "",
-    val addedAt: Long = 0
+    val addedAt: Long = 0,
+    val lastChapterUrl: String = "",
+    val hasUpdate: Boolean = false
 )
 
 data class HistoryEntry(
@@ -153,5 +199,6 @@ data class HistoryEntry(
     val chapterUrl: String,
     val chapterTitle: String,
     val mangaTitle: String,
-    val readAt: Long = 0
+    val readAt: Long = 0,
+    val lastPage: Int = 0
 )
