@@ -252,16 +252,21 @@ class KomikuApi {
             }
         }
 
-        val prevLink = doc.select("a[rel=prev], a:contains(Prev), a:contains(Sebelumnya)").firstOrNull()
-        val nextLink = doc.select("a[rel=next], a:contains(Next), a:contains(Selanjutnya)").firstOrNull()
+        // Komiku's nav buttons are icon-only, identified by aria-label rather than text.
+        val prevLink = firstMatch(doc, "a[aria-label=Prev]", "a[rel=prev]", "a:contains(Sebelumnya)")
+        val nextLink = firstMatch(doc, "a[aria-label=Next]", "a[rel=next]", "a:contains(Selanjutnya)")
 
         ChapterPage(
             mangaTitle = mangaTitle, chapterTitle = chapterTitle,
             imageUrls = imageUrls,
-            prevChapterUrl = prevLink?.attr("href")?.trim(),
-            nextChapterUrl = nextLink?.attr("href")?.trim()
+            prevChapterUrl = prevLink?.attr("href")?.trim()?.takeIf { it.isNotEmpty() },
+            nextChapterUrl = nextLink?.attr("href")?.trim()?.takeIf { it.isNotEmpty() }
         )
     }
+
+    // A comma-joined selector returns matches in document order; this tries selectors by priority instead.
+    private fun firstMatch(doc: Document, vararg selectors: String): org.jsoup.nodes.Element? =
+        selectors.firstNotNullOfOrNull { doc.selectFirst(it) }
 
     // ==================== PARSING HELPERS ====================
 
