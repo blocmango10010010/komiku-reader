@@ -99,8 +99,9 @@ fun KomikuNavHost() {
                 repository = repo,
                 onBack = { navController.popBackStack() },
                 onChapterChange = { newUrl ->
+                    // Replace the current reader so chapters don't pile up, whether opened from detail or library.
                     navController.navigate(Routes.chapterReader(slug, newUrl)) {
-                        popUpTo(Routes.MANGA_DETAIL)
+                        popUpTo(Routes.CHAPTER_READER) { inclusive = true }
                     }
                 }
             )
