@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.c99.komikureader.data.model.SearchResult
 import com.c99.komikureader.data.repository.MangaRepository
 import com.c99.komikureader.ui.components.LoadingView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -48,6 +49,9 @@ fun SearchScreen(
             loading = true
             try {
                 results = repository.search(q)
+            } catch (e: CancellationException) {
+                // A newer query replaced this one; let it own the loading state.
+                throw e
             } catch (e: Exception) {
                 results = emptyList()
             }

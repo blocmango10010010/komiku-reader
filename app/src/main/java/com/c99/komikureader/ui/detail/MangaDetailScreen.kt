@@ -56,18 +56,20 @@ fun MangaDetailScreen(
 
     fun toggleBookmark() {
         val d = detail ?: return
-        if (isBookmarked) {
-            repository.removeBookmark(slug)
-            isBookmarked = false
-        } else {
-            repository.addBookmark(
-                slug = slug,
-                title = d.title,
-                thumbnailUrl = d.thumbnailUrl,
-                type = d.type,
-                status = d.status
-            )
-            isBookmarked = true
+        scope.launch {
+            if (isBookmarked) {
+                repository.removeBookmark(slug)
+                isBookmarked = false
+            } else {
+                repository.addBookmark(
+                    slug = slug,
+                    title = d.title,
+                    thumbnailUrl = d.thumbnailUrl,
+                    type = d.type,
+                    status = d.status
+                )
+                isBookmarked = true
+            }
         }
     }
 
@@ -167,25 +169,6 @@ fun MangaDetailScreen(
                 }
             }
 
-            // Stats
-            if (d.totalViews.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        Column {
-                            Text("Total Views", style = MaterialTheme.typography.labelSmall)
-                            Text(d.totalViews, style = MaterialTheme.typography.titleSmall)
-                        }
-                        Column {
-                            Text("Minggu Ini", style = MaterialTheme.typography.labelSmall)
-                            Text(d.weeklyViews, style = MaterialTheme.typography.titleSmall)
-                        }
-                    }
-                }
-            }
-
             // Chapter list header
             item {
                 Text(
@@ -198,15 +181,7 @@ fun MangaDetailScreen(
             items(d.chapters) { chapter ->
                 ChapterItemRow(
                     chapter = chapter,
-                    onClick = {
-                        repository.addHistory(
-                            slug = slug,
-                            chapterUrl = chapter.url,
-                            chapterTitle = chapter.title,
-                            mangaTitle = d.title
-                        )
-                        onChapterClick(chapter.url)
-                    }
+                    onClick = { onChapterClick(chapter.url) }
                 )
             }
         }

@@ -19,6 +19,7 @@ import coil.compose.AsyncImage
 import com.c99.komikureader.data.local.BookmarkEntry
 import com.c99.komikureader.data.local.HistoryEntry
 import com.c99.komikureader.data.repository.MangaRepository
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,15 +32,17 @@ fun LibraryScreen(
     var selectedTab by remember { mutableStateOf(0) }
     val bookmarks = remember { mutableStateListOf<BookmarkEntry>() }
     val history = remember { mutableStateListOf<HistoryEntry>() }
+    val scope = rememberCoroutineScope()
 
-    fun refresh() {
+    suspend fun refresh() {
+        val newBookmarks = repository.getAllBookmarks()
+        val newHistory = repository.getAllHistory()
         bookmarks.clear()
-        bookmarks.addAll(repository.getAllBookmarks())
+        bookmarks.addAll(newBookmarks)
         history.clear()
-        history.addAll(repository.getAllHistory())
+        history.addAll(newHistory)
     }
 
-    LaunchedEffect(Unit) { refresh() }
     LaunchedEffect(selectedTab) { refresh() }
 
     Scaffold(
@@ -73,8 +76,10 @@ fun LibraryScreen(
 
             when (selectedTab) {
                 0 -> BookmarkTab(bookmarks, onMangaClick, onRemove = { slug ->
-                    repository.removeBookmark(slug)
-                    refresh()
+                    scope.launch {
+                        repository.removeBookmark(slug)
+                        refresh()
+                    }
                 })
                 1 -> HistoryTab(history, onMangaClick, onChapterClick)
             }

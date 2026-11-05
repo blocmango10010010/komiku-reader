@@ -22,8 +22,6 @@ data class MangaDetail(
     val rating: String = "",
     val synopsis: String = "",
     val thumbnailUrl: String = "",
-    val totalViews: String = "",
-    val weeklyViews: String = "",
     val chapters: List<ChapterItem> = emptyList()
 )
 

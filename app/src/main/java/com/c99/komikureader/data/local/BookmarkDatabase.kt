@@ -36,9 +36,13 @@ class BookmarkDatabase(context: Context) : SQLiteOpenHelper(context, "komiku_boo
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_BOOKMARKS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_HISTORY")
-        onCreate(db)
+        // Only the pre-release v1 schema is rebuilt; future versions must add real migrations
+        // here so users keep their bookmarks and history.
+        if (oldVersion < 2) {
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_BOOKMARKS")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_HISTORY")
+            onCreate(db)
+        }
     }
 
     // --- Bookmarks ---

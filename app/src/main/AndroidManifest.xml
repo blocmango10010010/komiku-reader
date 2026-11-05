@@ -10,8 +10,7 @@
         android:icon="@android:drawable/ic_menu_gallery"
         android:label="Komiku Reader"
         android:supportsRtl="true"
-        android:theme="@style/Theme.KomikuReader"
-        android:usesCleartextTraffic="true">
+        android:theme="@style/Theme.KomikuReader">
 
         <activity
             android:name=".MainActivity"
