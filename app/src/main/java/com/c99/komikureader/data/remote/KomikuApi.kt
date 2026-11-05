@@ -159,12 +159,24 @@ class KomikuApi {
 
     suspend fun getMangaDetail(slug: String): MangaDetail? = withContext(Dispatchers.IO) {
         val (doc, _) = fetchDoc("$baseUrl/manga/$slug/")
-        if (doc == null) return@withContext null
+        doc?.let { parseMangaDetail(it, slug) }
+    }
 
+    // ==================== CHAPTER READER ====================
+
+    suspend fun getChapterImages(chapterUrl: String): ChapterPage? = withContext(Dispatchers.IO) {
+        val url = if (chapterUrl.startsWith("http")) chapterUrl else "$baseUrl$chapterUrl"
+        val (doc, _) = fetchDoc(url)
+        doc?.let { parseChapterPage(it) }
+    }
+
+    // ==================== PARSING (internal for unit tests) ====================
+
+    internal fun parseMangaDetail(doc: Document, slug: String): MangaDetail? {
         var title = doc.select("h1").text().trim().removePrefix("Komik ").trim().ifEmpty {
             doc.select("title").text().replace(" - Komiku", "").removePrefix("Komik ").trim()
         }
-        if (title.isEmpty()) return@withContext null
+        if (title.isEmpty()) return null
 
         val infoTable = doc.select("table.inftable")
         var alternativeTitle = ""
@@ -208,28 +220,22 @@ class KomikuApi {
             val link = row.select("a[itemprop=url]").firstOrNull() ?: return@forEach
             val chapTitle = link.select("span[itemprop=name]").text().trim()
                 .ifEmpty { link.text().trim() }
-            val chapUrl = link.attr("href").trim()
+            val chapUrl = toPath(link.attr("href"))
             val date = row.select("td.tanggalseries").text().trim()
             if (chapTitle.isNotEmpty()) {
                 chapters.add(ChapterItem(title = chapTitle, url = chapUrl, date = date))
             }
         }
 
-        MangaDetail(
+        return MangaDetail(
             title = title, slug = slug, alternativeTitle = alternativeTitle,
             type = mangaType, genre = genre, author = author,
             status = status, rating = rating, synopsis = synopsis,
-            thumbnailUrl = thumbnail, chapters = chapters
+            thumbnailUrl = thumbnail, chapters = chapters.distinctBy { it.url }
         )
     }
 
-    // ==================== CHAPTER READER ====================
-
-    suspend fun getChapterImages(chapterUrl: String): ChapterPage? = withContext(Dispatchers.IO) {
-        val url = if (chapterUrl.startsWith("http")) chapterUrl else "$baseUrl$chapterUrl"
-        val (doc, _) = fetchDoc(url)
-        if (doc == null) return@withContext null
-
+    internal fun parseChapterPage(doc: Document): ChapterPage {
         val chapterTitle = doc.select("h1").text().trim()
             .ifEmpty { doc.select("title").text().replace(" - Komiku", "").trim() }
 
@@ -250,7 +256,7 @@ class KomikuApi {
         val prevLink = firstMatch(doc, "a[aria-label=Prev]", "a[rel=prev]", "a:contains(Sebelumnya)")
         val nextLink = firstMatch(doc, "a[aria-label=Next]", "a[rel=next]", "a:contains(Selanjutnya)")
 
-        ChapterPage(
+        return ChapterPage(
             mangaTitle = mangaTitle, chapterTitle = chapterTitle,
             imageUrls = imageUrls,
             prevChapterUrl = prevLink?.attr("href")?.let(::toPath)?.takeIf { it.isNotEmpty() },
@@ -262,9 +268,7 @@ class KomikuApi {
     private fun firstMatch(doc: Document, vararg selectors: String): org.jsoup.nodes.Element? =
         selectors.firstNotNullOfOrNull { doc.selectFirst(it) }
 
-    // ==================== PARSING HELPERS ====================
-
-    private fun parseMangaFromDoc(doc: Document): List<MangaItem> {
+    internal fun parseMangaFromDoc(doc: Document): List<MangaItem> {
         val items = mutableListOf<MangaItem>()
         val seen = mutableSetOf<String>()
 
@@ -333,7 +337,7 @@ class KomikuApi {
         items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb, type = type))
     }
 
-    private fun parseSearchResults(doc: Document): List<SearchResult> {
+    internal fun parseSearchResults(doc: Document): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
         val seenSlugs = mutableSetOf<String>()
 

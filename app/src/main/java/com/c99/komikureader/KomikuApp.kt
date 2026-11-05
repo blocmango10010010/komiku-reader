@@ -4,6 +4,7 @@ import android.app.Application
 import com.c99.komikureader.data.local.BookmarkDatabase
 import com.c99.komikureader.data.remote.KomikuApi
 import com.c99.komikureader.data.repository.MangaRepository
+import com.c99.komikureader.work.ChapterUpdateWorker
 
 class KomikuApp : Application() {
 
@@ -15,5 +16,8 @@ class KomikuApp : Application() {
         val api = KomikuApi()
         val db = BookmarkDatabase(this)
         repository = MangaRepository(api, db)
+
+        ChapterUpdateWorker.createChannel(this)
+        ChapterUpdateWorker.schedule(this)
     }
 }

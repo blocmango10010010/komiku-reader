@@ -195,6 +195,20 @@ fun BookmarkRow(
                 contentScale = ContentScale.Crop
             )
             Column(modifier = Modifier.weight(1f)) {
+                if (entry.hasUpdate) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiary,
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    ) {
+                        Text(
+                            "CHAPTER BARU",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 Text(entry.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
                 if (entry.status.isNotEmpty()) {
                     Text(entry.status, style = MaterialTheme.typography.labelSmall)

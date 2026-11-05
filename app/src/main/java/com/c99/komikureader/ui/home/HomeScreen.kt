@@ -10,7 +10,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.c99.komikureader.data.local.HistoryEntry
 import com.c99.komikureader.data.model.MangaItem
 import com.c99.komikureader.data.repository.MangaRepository
 import com.c99.komikureader.ui.components.LoadingView
@@ -25,12 +29,14 @@ fun HomeScreen(
     onMangaClick: (String) -> Unit,
     onSearchClick: () -> Unit,
     onBrowseClick: () -> Unit,
-    onLibraryClick: () -> Unit
+    onLibraryClick: () -> Unit,
+    onContinueClick: (slug: String, chapterUrl: String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
 
     var ranking by remember { mutableStateOf<List<MangaItem>>(emptyList()) }
     var latest by remember { mutableStateOf<List<MangaItem>>(emptyList()) }
+    var recent by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -39,6 +45,7 @@ fun HomeScreen(
             loading = true
             error = null
             try {
+                recent = repository.getAllHistory(limit = 10)
                 ranking = repository.getHomeRanking()
                 latest = repository.getHomeLatest()
             } catch (e: Exception) {
@@ -137,6 +144,22 @@ fun HomeScreen(
                 }
             }
 
+            // Continue reading
+            if (recent.isNotEmpty()) {
+                item { SectionHeader(title = "📖 Lanjutkan Membaca") }
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(recent, key = { it.slug }) { entry ->
+                            ContinueCard(entry, onClick = { onContinueClick(entry.slug, entry.chapterUrl) })
+                        }
+                    }
+                }
+                item { Spacer(modifier = Modifier.height(8.dp)) }
+            }
+
             // Ranking section
             if (ranking.isNotEmpty()) {
                 item { SectionHeader(title = "🏆 Peringkat Populer") }
@@ -166,6 +189,38 @@ fun HomeScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ContinueCard(entry: HistoryEntry, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.width(200.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                entry.mangaTitle.ifEmpty { entry.slug },
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.PlayArrow, contentDescription = null,
+                    modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    entry.chapterTitle.ifEmpty { "Lanjutkan" },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

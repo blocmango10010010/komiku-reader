@@ -1,6 +1,7 @@
 package com.c99.komikureader.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -35,10 +36,18 @@ object Routes {
 }
 
 @Composable
-fun KomikuNavHost() {
+fun KomikuNavHost(openSlug: String? = null, openLibrary: Boolean = false) {
     val navController = rememberNavController()
     val context = LocalContext.current
     val repo = (context.applicationContext as KomikuApp).repository
+
+    // Deep link from a new-chapter notification.
+    LaunchedEffect(Unit) {
+        when {
+            openSlug != null -> navController.navigate(Routes.mangaDetail(openSlug))
+            openLibrary -> navController.navigate(Routes.LIBRARY)
+        }
+    }
 
     NavHost(navController = navController, startDestination = Routes.HOME) {
 
@@ -48,7 +57,10 @@ fun KomikuNavHost() {
                 onMangaClick = { slug -> navController.navigate(Routes.mangaDetail(slug)) },
                 onSearchClick = { navController.navigate(Routes.SEARCH) },
                 onBrowseClick = { navController.navigate(Routes.BROWSE) },
-                onLibraryClick = { navController.navigate(Routes.LIBRARY) }
+                onLibraryClick = { navController.navigate(Routes.LIBRARY) },
+                onContinueClick = { slug, chapterUrl ->
+                    navController.navigate(Routes.chapterReader(slug, chapterUrl))
+                }
             )
         }
 
