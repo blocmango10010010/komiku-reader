@@ -38,12 +38,11 @@ fun BrowseScreen(
             try {
                 errorMsg = null
                 val items = repository.getMangaList(p, type = filterType)
-                if (p == 1) {
-                    mangaList = items
-                } else {
-                    mangaList = mangaList + items
-                }
-                hasMore = items.size >= 50
+                // Ignore a late response for a filter the user already switched away from.
+                if (filterType != selectedType) return@launch
+                mangaList = if (p == 1) items else (mangaList + items).distinctBy { it.slug }
+                // Page sizes differ (50 for all, 10 per type), so only an empty page ends the list.
+                hasMore = items.isNotEmpty()
             } catch (e: Exception) {
                 if (p == 1) {
                     errorMsg = e.message ?: "Gagal memuat data"
@@ -123,7 +122,7 @@ fun BrowseScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(errorMsg!!, color = MaterialTheme.colorScheme.error)
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { loadPage(1, selectedType) }) { Text("Coba Lagi") }
+                Button(onClick = { page = 1; loading = true; loadPage(1, selectedType) }) { Text("Coba Lagi") }
             }
             return@Scaffold
         }

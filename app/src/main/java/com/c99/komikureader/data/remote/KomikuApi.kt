@@ -14,10 +14,13 @@ class KomikuApi {
     private val cookieJar = object : CookieJar {
         private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
 
+        // OkHttp calls these from multiple threads concurrently.
+        @Synchronized
         override fun loadForRequest(url: HttpUrl): List<Cookie> {
             return cookieStore[url.host]?.toList() ?: emptyList()
         }
 
+        @Synchronized
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
             cookieStore.getOrPut(url.host) { mutableListOf() }.let { stored ->
                 cookies.forEach { newCookie ->
@@ -117,28 +120,17 @@ class KomikuApi {
     // ==================== MANGA LISTING ====================
 
     suspend fun getMangaList(page: Int = 1, type: String = ""): List<MangaItem> = withContext(Dispatchers.IO) {
+        // /pustaka/ fills its list via JavaScript, so the type filter uses the API listing instead.
         val url = if (type.isNotEmpty()) {
-            "$baseUrl/pustaka/?tipe=$type${if (page > 1) "&page=$page" else ""}"
+            "$apiUrl/manga/${if (page > 1) "page/$page/" else ""}?tipe=$type"
         } else {
             if (page <= 1) "$baseUrl/daftar-komik/"
             else "$baseUrl/daftar-komik/page/$page/"
         }
 
+        // Past the last page the site returns 404; an empty list ends pagination.
         val (doc, _) = fetchDoc(url)
-        if (doc != null) {
-            val items = parseMangaFromDoc(doc)
-            if (items.isNotEmpty()) return@withContext items
-        }
-        
-        // Fallback: try without page (some sites use different pagination)
-        if (page > 1) {
-            val (doc2, _) = fetchDoc("$baseUrl/daftar-komik/")
-            if (doc2 != null) {
-                return@withContext parseMangaFromDoc(doc2)
-            }
-        }
-        
-        emptyList()
+        doc?.let { parseMangaFromDoc(it) } ?: emptyList()
     }
 
     // ==================== SEARCH ====================
@@ -166,11 +158,11 @@ class KomikuApi {
     // ==================== MANGA DETAIL ====================
 
     suspend fun getMangaDetail(slug: String): MangaDetail? = withContext(Dispatchers.IO) {
-        val (doc, error) = fetchDoc("$baseUrl/manga/$slug/")
+        val (doc, _) = fetchDoc("$baseUrl/manga/$slug/")
         if (doc == null) return@withContext null
 
-        val title = doc.select("h1").text().trim().ifEmpty {
-            doc.select("title").text().replace(" - Komiku", "").trim()
+        var title = doc.select("h1").text().trim().removePrefix("Komik ").trim().ifEmpty {
+            doc.select("title").text().replace(" - Komiku", "").removePrefix("Komik ").trim()
         }
         if (title.isEmpty()) return@withContext null
 
@@ -188,6 +180,7 @@ class KomikuApi {
                 val label = cells[0].text().trim().lowercase()
                 val value = cells[1].text().trim()
                 when {
+                    label == "judul" -> if (value.isNotEmpty()) title = value
                     label.contains("alternatif") -> alternativeTitle = value
                     label.contains("tipe") -> mangaType = value
                     label.contains("genre") -> genre = value
@@ -198,9 +191,9 @@ class KomikuApi {
             }
         }
 
-        val synopsis = doc.select("section#Sinopsis p, article p, meta[name=description]").let {
-            it.text().ifEmpty { it.attr("content") }
-        }
+        val synopsis = doc.select("p.desc").text().trim()
+            .ifEmpty { doc.select("section#Sinopsis p").text().trim() }
+            .ifEmpty { doc.select("meta[name=description]").attr("content").trim() }
 
         val thumbnail = doc.select("meta[property=og:image]").attr("content")
             .ifEmpty {
@@ -245,7 +238,8 @@ class KomikuApi {
             .ifEmpty { doc.select("a[href*=/manga/]").lastOrNull()?.text()?.trim() ?: "" }
 
         val imageUrls = mutableListOf<String>()
-        doc.select("img").forEach { img ->
+        val pageImages = doc.select("#Baca_Komik img").ifEmpty { doc.select("img") }
+        pageImages.forEach { img ->
             val src = img.attr("src").trim()
             if (src.isNotEmpty() && isMangaImage(src)) {
                 imageUrls.add(src)
@@ -259,8 +253,8 @@ class KomikuApi {
         ChapterPage(
             mangaTitle = mangaTitle, chapterTitle = chapterTitle,
             imageUrls = imageUrls,
-            prevChapterUrl = prevLink?.attr("href")?.trim()?.takeIf { it.isNotEmpty() },
-            nextChapterUrl = nextLink?.attr("href")?.trim()?.takeIf { it.isNotEmpty() }
+            prevChapterUrl = prevLink?.attr("href")?.let(::toPath)?.takeIf { it.isNotEmpty() },
+            nextChapterUrl = nextLink?.attr("href")?.let(::toPath)?.takeIf { it.isNotEmpty() }
         )
     }
 
@@ -282,9 +276,10 @@ class KomikuApi {
         // Strategy 2: div.bge blocks (search/list format)
         if (items.isEmpty()) {
             doc.select("div.bge, article").forEach { block ->
-                block.select("a[href*=/manga/]").firstOrNull()?.let { link ->
-                    addIfNew(link, seen, items)
-                }
+                // Prefer the title link; the first link wraps the cover and an "Up N" badge.
+                val link = block.selectFirst("a[href*=/manga/]:has(h3), a[href*=/manga/]:has(h4)")
+                    ?: block.selectFirst("a[href*=/manga/]")
+                link?.let { addIfNew(it, seen, items, type = block.select(".tpe1_inf b").text().trim()) }
             }
         }
 
@@ -312,14 +307,15 @@ class KomikuApi {
         return items
     }
 
-    private fun addIfNew(link: org.jsoup.nodes.Element, seen: MutableSet<String>, items: MutableList<MangaItem>) {
+    private fun addIfNew(link: org.jsoup.nodes.Element, seen: MutableSet<String>, items: MutableList<MangaItem>, type: String = "") {
         val href = link.attr("href").trim()
         val slug = extractSlug(href)
         if (slug.isEmpty() || slug in seen) return
         seen.add(slug)
 
-        val title = link.select("h4,h3,span").text().trim()
-            .ifEmpty { link.attr("title").trim() }
+        val title = link.select("h4,h3").text().trim()
+            .ifEmpty { link.ownText().trim() }
+            .ifEmpty { link.attr("title").trim().removePrefix("Baca ").removePrefix("Komik ").trim() }
             .ifEmpty { link.text().trim() }
         if (title.isEmpty() || title.length > 100) return
 
@@ -334,7 +330,7 @@ class KomikuApi {
             parent = parent?.parent()
         }
 
-        items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb))
+        items.add(MangaItem(title = title, slug = slug, thumbnailUrl = thumb, type = type))
     }
 
     private fun parseSearchResults(doc: Document): List<SearchResult> {
@@ -368,14 +364,15 @@ class KomikuApi {
 
     // ==================== HELPERS ====================
 
-    private fun extractSlug(href: String): String {
-        return href.removePrefix("/").removeSuffix("/")
-            .removePrefix("manga/")
-            .split("/").firstOrNull()?.trim() ?: ""
-    }
+    // Keeps chapter URLs relative ("/x-chapter-1/") so history keys match the detail page's links.
+    private fun toPath(href: String): String =
+        href.trim().replace(Regex("^https?://[^/]+"), "")
+
+    private fun extractSlug(href: String): String =
+        Regex("/manga/([^/?#]+)").find(href)?.groupValues?.get(1)?.trim() ?: ""
 
     private fun extractMangaSlugFromChapter(chapterHref: String): String {
-        val path = chapterHref.removePrefix("/").removeSuffix("/")
+        val path = toPath(chapterHref).removePrefix("/").removeSuffix("/")
         val match = Regex("^(.+)-chapter-\\d+").find(path)
         return match?.groupValues?.get(1) ?: ""
     }
@@ -389,9 +386,7 @@ class KomikuApi {
 
     private fun isMangaImage(src: String): Boolean {
         val lower = src.lowercase()
-        return (lower.contains("komiku.to/upload") ||
-                lower.contains("komiku.org/upload") ||
-                lower.contains("img.komiku")) &&
+        return lower.contains("komiku.") && lower.contains("/upload") &&
                 (lower.endsWith(".webp") || lower.endsWith(".jpg") ||
                  lower.endsWith(".jpeg") || lower.endsWith(".png"))
     }

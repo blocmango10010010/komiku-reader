@@ -5,6 +5,8 @@ import com.c99.komikureader.data.local.BookmarkEntry
 import com.c99.komikureader.data.local.HistoryEntry
 import com.c99.komikureader.data.model.*
 import com.c99.komikureader.data.remote.KomikuApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MangaRepository(
     private val api: KomikuApi,
@@ -18,18 +20,19 @@ class MangaRepository(
     suspend fun getMangaDetail(slug: String) = api.getMangaDetail(slug)
     suspend fun getChapterImages(chapterUrl: String) = api.getChapterImages(chapterUrl)
 
+    // Local (SQLite is blocking, so keep it off the main thread)
+    private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
+
     // Bookmarks
-    fun addBookmark(slug: String, title: String, thumbnailUrl: String = "", type: String = "", status: String = "") {
-        db.addBookmark(slug, title, thumbnailUrl, type, status)
-    }
-    fun removeBookmark(slug: String) = db.removeBookmark(slug)
-    fun isBookmarked(slug: String) = db.isBookmarked(slug)
-    fun getAllBookmarks() = db.getAllBookmarks()
+    suspend fun addBookmark(slug: String, title: String, thumbnailUrl: String = "", type: String = "", status: String = "") =
+        io { db.addBookmark(slug, title, thumbnailUrl, type, status) }
+    suspend fun removeBookmark(slug: String) = io { db.removeBookmark(slug) }
+    suspend fun isBookmarked(slug: String) = io { db.isBookmarked(slug) }
+    suspend fun getAllBookmarks() = io { db.getAllBookmarks() }
 
     // History
-    fun addHistory(slug: String, chapterUrl: String, chapterTitle: String, mangaTitle: String) {
-        db.addHistory(slug, chapterUrl, chapterTitle, mangaTitle)
-    }
-    fun getLastRead(slug: String) = db.getLastRead(slug)
-    fun getAllHistory() = db.getAllHistory()
+    suspend fun addHistory(slug: String, chapterUrl: String, chapterTitle: String, mangaTitle: String) =
+        io { db.addHistory(slug, chapterUrl, chapterTitle, mangaTitle) }
+    suspend fun getLastRead(slug: String) = io { db.getLastRead(slug) }
+    suspend fun getAllHistory() = io { db.getAllHistory() }
 }

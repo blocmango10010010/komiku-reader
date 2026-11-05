@@ -164,17 +164,18 @@ fun ChapterReaderScreen(
             modifier = Modifier.padding(padding).fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            itemsIndexed(images) { index, url ->
+            itemsIndexed(images, key = { _, url -> url }) { index, url ->
+                // Unloaded pages have zero height, which would make the list compose and
+                // download every page at once; reserve space until each one loads.
+                var loaded by remember(url) { mutableStateOf(false) }
                 AsyncImage(
                     model = url,
                     contentDescription = "Halaman ${index + 1}",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(
-                            // Use width as key sizing dimension
-                            Modifier.wrapContentHeight()
-                        ),
-                    contentScale = ContentScale.FillWidth
+                        .then(if (loaded) Modifier.wrapContentHeight() else Modifier.height(screenWidth * 1.4f)),
+                    contentScale = ContentScale.FillWidth,
+                    onSuccess = { loaded = true }
                 )
             }
         }
