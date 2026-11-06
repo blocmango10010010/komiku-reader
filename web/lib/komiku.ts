@@ -10,7 +10,16 @@ const API = "https://api.komiku.org";
 const UA =
   "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
-export type MangaItem = { title: string; slug: string; thumbnailUrl: string; type: string };
+export type ChapterRef = { title: string; url: string };
+export type MangaItem = {
+  title: string;
+  slug: string;
+  thumbnailUrl: string;
+  type: string;
+  latestChapter?: ChapterRef;
+  /** Relative time from the site, e.g. "3 menit lalu". */
+  updated?: string;
+};
 export type ChapterItem = { title: string; url: string; date: string };
 export type MangaDetail = {
   title: string;
@@ -25,6 +34,8 @@ export type MangaDetail = {
   chapters: ChapterItem[];
 };
 export type ChapterPage = {
+  /** Decoded path, e.g. "/ao-ashi-chapter-2/"; matches ChapterItem.url for history lookups. */
+  url: string;
   mangaSlug: string;
   mangaTitle: string;
   chapterTitle: string;
@@ -40,7 +51,26 @@ export type SearchResult = {
 };
 
 export const MANGA_TYPES = ["manga", "manhwa", "manhua"] as const;
-const SAFE_SEGMENT = /^[a-z0-9][a-z0-9-]*$/i;
+export const SORTS = ["update", "az"] as const;
+export type Sort = (typeof SORTS)[number];
+
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * Slugs are kept decoded internally (some contain non-ASCII, e.g. "tokyo卍revengers") and
+ * encoded only when requesting komiku. Anything that could change the request path is rejected.
+ */
+function encodeSegment(segment: string): string | null {
+  const s = safeDecode(segment).trim();
+  if (!s || s.startsWith(".") || /[\/\\?#\s]/.test(s)) return null;
+  return encodeURIComponent(s);
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -74,11 +104,11 @@ async function fetchDoc(url: string, revalidate: number): Promise<CheerioAPI | n
 
 /** Keeps chapter URLs relative ("/x-chapter-1/") so history keys match across pages. */
 export function toPath(href: string): string {
-  return href.trim().replace(/^https?:\/\/[^/]+/, "");
+  return safeDecode(href.trim().replace(/^https?:\/\/[^/]+/, ""));
 }
 
 function extractSlug(href: string): string {
-  return /\/manga\/([^/?#]+)/.exec(href)?.[1]?.trim() ?? "";
+  return safeDecode(/\/manga\/([^/?#]+)/.exec(href)?.[1]?.trim() ?? "");
 }
 
 export function mangaSlugFromChapter(chapterHref: string): string {
@@ -121,7 +151,7 @@ export function parseMangaList($: CheerioAPI): MangaItem[] {
   const items: MangaItem[] = [];
   const seen = new Set<string>();
 
-  const add = (link: Element, type = "") => {
+  const add = (link: Element, type = "", extra: Pick<MangaItem, "latestChapter" | "updated"> = {}) => {
     const $l = $(link);
     const slug = extractSlug($l.attr("href") ?? "");
     if (!slug || seen.has(slug)) return;
@@ -142,7 +172,7 @@ export function parseMangaList($: CheerioAPI): MangaItem[] {
       thumb = img.attr("data-src") || img.attr("src") || "";
       parent = parent.parent();
     }
-    items.push({ title, slug, thumbnailUrl: thumb, type });
+    items.push({ title, slug, thumbnailUrl: thumb, type, ...extra });
   };
 
   // Home and /daftar-komik/: title links inside headings.
@@ -154,7 +184,16 @@ export function parseMangaList($: CheerioAPI): MangaItem[] {
       const $b = $(block);
       let link = $b.find("a[href*='/manga/']:has(h3), a[href*='/manga/']:has(h4)").first();
       if (!link.length) link = $b.find("a[href*='/manga/']").first();
-      if (link.length) add(link[0], $b.find(".tpe1_inf b").text().trim());
+      const latest = $b.find("div.new1").last().find("a").last();
+      const href = latest.attr("href");
+      const updated = $b.find(".judul2").text().split("|")[1]?.trim();
+      if (link.length)
+        add(link[0], $b.find(".tpe1_inf b").text().trim(), {
+          latestChapter: href
+            ? { title: latest.find("span").last().text().trim() || latest.text().trim(), url: toPath(href) }
+            : undefined,
+          updated: updated || undefined,
+        });
     });
   }
 
@@ -162,6 +201,39 @@ export function parseMangaList($: CheerioAPI): MangaItem[] {
     $(".ls4 a[href*='/manga/'], .rank-panel a[href*='/manga/']").each((_, el) => add(el));
   }
   return items;
+}
+
+/** Home page: today's ranking and the "Baca Komik Terbaru" (latest updates) feed. */
+export function parseHome($: CheerioAPI): { ranking: MangaItem[]; latest: MangaItem[] } {
+  const card = (el: Element, titleSel: string, chapterSel: string, metaSel: string, sep: string): MangaItem | null => {
+    const $e = $(el);
+    const link = $e.find(titleSel).first();
+    const slug = extractSlug(link.attr("href") ?? "");
+    const title = link.text().trim();
+    if (!slug || !title) return null;
+    const img = $e.find("img").first();
+    const chapter = $e.find(chapterSel).first();
+    const href = chapter.attr("href");
+    return {
+      title,
+      slug,
+      thumbnailUrl: img.attr("data-src") || img.attr("src") || "",
+      type: "",
+      latestChapter: href ? { title: chapter.text().trim(), url: toPath(href) } : undefined,
+      updated: $e.find(metaSel).text().split(sep)[1]?.trim() || undefined,
+    };
+  };
+  const unique = (items: (MangaItem | null)[]) => {
+    const seen = new Set<string>();
+    return items.filter((i): i is MangaItem => !!i && !seen.has(i.slug) && !!seen.add(i.slug));
+  };
+
+  let rankingEls = $("#rank-harian .ls4").toArray();
+  if (!rankingEls.length) rankingEls = $("#Rekomendasi_Komik .ls4").toArray();
+  return {
+    ranking: unique(rankingEls.map((el) => card(el, "h4 a", "a.ls24", ".ls4s", "·"))),
+    latest: unique($("#Terbaru article").toArray().map((el) => card(el, "h3 a", "a.ls2l", ".ls2t", "·"))),
+  };
 }
 
 export function parseSearchResults($: CheerioAPI): SearchResult[] {
@@ -266,6 +338,7 @@ export function parseChapterPage($: CheerioAPI, chapterUrl: string): ChapterPage
   };
 
   return {
+    url: toPath(chapterUrl),
     mangaSlug: mangaSlugFromChapter(chapterUrl),
     mangaTitle,
     chapterTitle,
@@ -281,27 +354,29 @@ const LIST_TTL = 600;
 const DETAIL_TTL = 300;
 const CHAPTER_TTL = 1800;
 
+// The home feed changes every few minutes, so it is refreshed more often than other lists.
+const HOME_TTL = 120;
+
 export async function getHome(): Promise<{ ranking: MangaItem[]; latest: MangaItem[] } | null> {
-  const [home, daftar] = await Promise.all([
-    fetchDoc(`${BASE}/`, LIST_TTL),
-    fetchDoc(`${BASE}/daftar-komik/`, LIST_TTL),
-  ]);
-  if (!home && !daftar) return null;
-  return {
-    ranking: home ? parseMangaList(home).slice(0, 15) : [],
-    latest: daftar ? parseMangaList(daftar).slice(0, 30) : [],
-  };
+  const $ = await fetchDoc(`${BASE}/`, HOME_TTL);
+  return $ ? parseHome($) : null;
 }
 
 /** Returns null when the site is unreachable, [] past the last page. */
-export async function getMangaList(page: number, type: string): Promise<MangaItem[] | null> {
-  // /pustaka/ fills its list via JavaScript, so the type filter uses the API listing.
-  const url = (MANGA_TYPES as readonly string[]).includes(type)
-    ? `${API}/manga/${page > 1 ? `page/${page}/` : ""}?tipe=${type}`
-    : page > 1
-      ? `${BASE}/daftar-komik/page/${page}/`
-      : `${BASE}/daftar-komik/`;
-  const $ = await fetchDoc(url, LIST_TTL);
+export async function getMangaList(page: number, type: string, sort: Sort = "update"): Promise<MangaItem[] | null> {
+  const hasType = (MANGA_TYPES as readonly string[]).includes(type);
+  const pagePath = page > 1 ? `page/${page}/` : "";
+  // /pustaka/ fills its list via JavaScript, so sorting and type filters use the API listing.
+  // A–Z without a type keeps /daftar-komik/, which has 50 titles per page instead of 10.
+  let url: string;
+  if (sort === "az" && !hasType) {
+    url = `${BASE}/daftar-komik/${pagePath}`;
+  } else {
+    const q = new URLSearchParams(sort === "az" ? { orderby: "title", order: "asc" } : { orderby: "modified" });
+    if (hasType) q.set("tipe", type);
+    url = `${API}/manga/${pagePath}?${q}`;
+  }
+  const $ = await fetchDoc(url, sort === "update" ? HOME_TTL : LIST_TTL);
   return $ ? parseMangaList($) : page > 1 ? [] : null;
 }
 
@@ -316,14 +391,15 @@ export async function search(query: string): Promise<SearchResult[]> {
 }
 
 export async function getMangaDetail(slug: string): Promise<MangaDetail | null> {
-  if (!SAFE_SEGMENT.test(slug)) return null;
-  const $ = await fetchDoc(`${BASE}/manga/${slug}/`, DETAIL_TTL);
-  return $ ? parseMangaDetail($, slug) : null;
+  const encoded = encodeSegment(slug);
+  if (!encoded) return null;
+  const $ = await fetchDoc(`${BASE}/manga/${encoded}/`, DETAIL_TTL);
+  return $ ? parseMangaDetail($, safeDecode(slug)) : null;
 }
 
 export async function getChapter(segment: string): Promise<ChapterPage | null> {
-  if (!SAFE_SEGMENT.test(segment)) return null;
-  const path = `/${segment}/`;
-  const $ = await fetchDoc(`${BASE}${path}`, CHAPTER_TTL);
-  return $ ? parseChapterPage($, path) : null;
+  const encoded = encodeSegment(segment);
+  if (!encoded) return null;
+  const $ = await fetchDoc(`${BASE}/${encoded}/`, CHAPTER_TTL);
+  return $ ? parseChapterPage($, `/${safeDecode(segment)}/`) : null;
 }

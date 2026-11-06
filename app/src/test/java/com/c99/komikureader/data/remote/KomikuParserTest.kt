@@ -118,4 +118,30 @@ class KomikuParserTest {
         assertNull(page.prevChapterUrl)
         assertEquals("/x-chapter-2/", page.nextChapterUrl)
     }
+
+    @Test
+    fun `home latest feed comes from the Terbaru section with chapter and time`() {
+        val home = doc("""
+            <section id="Rekomendasi_Komik"><div id="rank-harian">
+              <div class="ls4"><img data-src="https://t/op.jpg"><div class="ls4j"><h4><a href="/manga/komik-one-piece-indo/">One Piece</a></h4>
+              <span class="ls4s">Fantasi · 18,188 views</span><a href="/one-piece-chapter-1198/" class="ls24">Chapter 1198</a></div></div>
+            </div><div id="rank-mingguan">
+              <div class="ls4"><div class="ls4j"><h4><a href="/manga/ao-ashi/">Ao Ashi</a></h4></div></div>
+            </div></section>
+            <section id="Terbaru">
+              <article class="ls2"><div class="ls2v"><a href="/manga/guard-pass/"><img src="lazy.jpg" data-src="https://t/gp.png"></a></div>
+              <div class="ls2j"><h3><a href="/manga/guard-pass/" title="Baca Manhwa Guard Pass">Guard Pass</a></h3>
+              <span class="ls2t">Olahraga · 3 menit lalu</span><a href="/guard-pass-chapter-40-2/" class="ls2l">Chapter 40.2</a></div></article>
+            </section>
+            <section id="Komik_Isekai"><h3><a href="/manga/isekai-x/">Isekai X</a></h3></section>
+        """)
+        val ranking = api.parseHomeRanking(home)
+        assertEquals(listOf("komik-one-piece-indo"), ranking.map { it.slug })
+
+        val latest = api.parseHomeLatest(home)
+        assertEquals(1, latest.size)
+        assertEquals("Guard Pass", latest[0].title)
+        assertEquals("https://t/gp.png", latest[0].thumbnailUrl)
+        assertEquals("Chapter 40.2 · 3 menit lalu", latest[0].latestChapter)
+    }
 }

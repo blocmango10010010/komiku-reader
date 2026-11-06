@@ -162,7 +162,7 @@ fun HomeScreen(
 
             // Ranking section
             if (ranking.isNotEmpty()) {
-                item { SectionHeader(title = "🏆 Peringkat Populer") }
+                item { SectionHeader(title = "🏆 Populer Hari Ini") }
                 item {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),

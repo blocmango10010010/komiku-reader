@@ -93,28 +93,14 @@ class KomikuApi {
     // ==================== HOME ====================
 
     suspend fun getHomeRanking(): List<MangaItem> = withContext(Dispatchers.IO) {
-        // Try direct HTML first
         val (doc, _) = fetchDoc(baseUrl)
-        if (doc != null) {
-            val items = parseMangaFromDoc(doc)
-            if (items.isNotEmpty()) return@withContext items
-        }
-        
-        // Fallback: scrape daftar-komik page 1
-        val (doc2, _) = fetchDoc("$baseUrl/daftar-komik/")
-        if (doc2 != null) {
-            return@withContext parseMangaFromDoc(doc2).take(20)
-        }
-        
-        emptyList()
+        doc?.let { parseHomeRanking(it) } ?: emptyList()
     }
 
+    /** The home page's "Baca Komik Terbaru" feed, newest update first. */
     suspend fun getHomeLatest(): List<MangaItem> = withContext(Dispatchers.IO) {
-        val (doc, _) = fetchDoc("$baseUrl/daftar-komik/")
-        if (doc != null) {
-            return@withContext parseMangaFromDoc(doc).take(30)
-        }
-        emptyList()
+        val (doc, _) = fetchDoc(baseUrl)
+        doc?.let { parseHomeLatest(it) } ?: emptyList()
     }
 
     // ==================== MANGA LISTING ====================
@@ -267,6 +253,31 @@ class KomikuApi {
     // A comma-joined selector returns matches in document order; this tries selectors by priority instead.
     private fun firstMatch(doc: Document, vararg selectors: String): org.jsoup.nodes.Element? =
         selectors.firstNotNullOfOrNull { doc.selectFirst(it) }
+
+    internal fun parseHomeRanking(doc: Document): List<MangaItem> {
+        val els = doc.select("#rank-harian .ls4").ifEmpty { doc.select("#Rekomendasi_Komik .ls4") }
+        return els.mapNotNull { homeCard(it, "h4 a", "a.ls24") }.distinctBy { it.slug }
+    }
+
+    internal fun parseHomeLatest(doc: Document): List<MangaItem> =
+        doc.select("#Terbaru article").mapNotNull { homeCard(it, "h3 a", "a.ls2l") }
+            .distinctBy { it.slug }
+
+    private fun homeCard(el: org.jsoup.nodes.Element, titleSel: String, chapterSel: String): MangaItem? {
+        val link = el.selectFirst(titleSel) ?: return null
+        val slug = extractSlug(link.attr("href"))
+        val title = link.text().trim()
+        if (slug.isEmpty() || title.isEmpty()) return null
+        val img = el.selectFirst("img")
+        val chapter = el.selectFirst(chapterSel)?.text()?.trim().orEmpty()
+        val updated = el.selectFirst(".ls2t")?.text()?.substringAfter("·", "")?.trim().orEmpty()
+        return MangaItem(
+            title = title,
+            slug = slug,
+            thumbnailUrl = img?.attr("data-src")?.ifEmpty { null } ?: img?.attr("src").orEmpty(),
+            latestChapter = listOf(chapter, updated).filter { it.isNotEmpty() }.joinToString(" · ")
+        )
+    }
 
     internal fun parseMangaFromDoc(doc: Document): List<MangaItem> {
         val items = mutableListOf<MangaItem>()

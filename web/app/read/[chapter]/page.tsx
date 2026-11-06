@@ -14,8 +14,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function ReadPage({ params }: Props) {
-  const segment = (await params).chapter;
-  const page = await loadChapter(segment);
+  const page = await loadChapter((await params).chapter);
   if (!page) notFound();
 
   const href = (url: string | null) => (url ? `/read/${chapterSegment(url)}` : null);
@@ -25,7 +24,7 @@ export default async function ReadPage({ params }: Props) {
       mangaSlug={page.mangaSlug}
       mangaTitle={page.mangaTitle}
       chapterTitle={page.chapterTitle}
-      chapterUrl={`/${segment}/`}
+      chapterUrl={page.url}
       imageUrls={page.imageUrls}
       prevHref={href(page.prevChapterUrl)}
       nextHref={href(page.nextChapterUrl)}
