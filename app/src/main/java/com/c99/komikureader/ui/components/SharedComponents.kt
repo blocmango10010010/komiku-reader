@@ -68,6 +68,15 @@ fun MangaCard(
                         lineHeight = 16.sp
                     )
                 )
+                if (item.latestChapter.isNotEmpty()) {
+                    Text(
+                        text = item.latestChapter,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 if (item.type.isNotEmpty()) {
                     Text(
                         text = item.type,

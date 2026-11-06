@@ -31,7 +31,7 @@ class MangaRepository(
     suspend fun getHomeRanking(force: Boolean = false) =
         cached("home:ranking", LIST_TTL, force) { api.getHomeRanking() } ?: emptyList()
     suspend fun getHomeLatest(force: Boolean = false) =
-        cached("home:latest", LIST_TTL, force) { api.getHomeLatest() } ?: emptyList()
+        cached("home:latest", LATEST_TTL, force) { api.getHomeLatest() } ?: emptyList()
     suspend fun getMangaList(page: Int = 1, type: String = "") =
         cached("list:$type:$page", LIST_TTL) { api.getMangaList(page, type) } ?: emptyList()
     suspend fun search(query: String) = api.search(query)
@@ -66,6 +66,7 @@ class MangaRepository(
 
     private companion object {
         const val LIST_TTL = 10 * 60_000L
+        const val LATEST_TTL = 2 * 60_000L
         const val DETAIL_TTL = 5 * 60_000L
         const val CHAPTER_TTL = 30 * 60_000L
     }
