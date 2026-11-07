@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BottomNav, TopBar } from "@/components/Nav";
 import "./globals.css";
 
@@ -24,6 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <TopBar />
         <main className="container">{children}</main>
         <BottomNav />
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
