@@ -4,7 +4,7 @@ import Hero from "@/components/Hero";
 import Icon from "@/components/Icons";
 import { ContinueReading } from "@/components/LibraryClient";
 import MangaCard from "@/components/MangaCard";
-import { getHome } from "@/lib/komiku";
+import { getHome } from "@/lib/sources";
 
 const CATEGORIES = [
   { type: "manga", label: "Manga", sub: "Jepang" },

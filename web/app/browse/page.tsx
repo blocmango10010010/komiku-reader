@@ -3,7 +3,8 @@ import Link from "next/link";
 import ErrorNotice from "@/components/ErrorNotice";
 import Icon from "@/components/Icons";
 import MangaCard from "@/components/MangaCard";
-import { getMangaList, MANGA_TYPES, SORTS, type Sort } from "@/lib/komiku";
+import { MANGA_TYPES, SORTS, type Sort } from "@/lib/komiku";
+import { getMangaList } from "@/lib/sources";
 
 export const metadata: Metadata = { title: "Jelajah" };
 

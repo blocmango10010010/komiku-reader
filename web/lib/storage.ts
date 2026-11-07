@@ -2,6 +2,7 @@
 
 // Bookmarks and reading history live in localStorage, mirroring the Android app's SQLite tables.
 import { useSyncExternalStore } from "react";
+import { titleKey } from "./titles";
 
 export type Bookmark = {
   slug: string;
@@ -82,14 +83,15 @@ export function useHistory(): Record<string, HistoryEntry> {
   );
 }
 
-/** Latest chapter read per manga, newest first. */
+/** Latest chapter read per title, newest first. The same title read on two sources counts once. */
 export function latestPerManga(history: Record<string, HistoryEntry>): HistoryEntry[] {
-  const bySlug = new Map<string, HistoryEntry>();
+  const byTitle = new Map<string, HistoryEntry>();
   for (const entry of Object.values(history)) {
-    const prev = bySlug.get(entry.slug);
-    if (!prev || entry.readAt > prev.readAt) bySlug.set(entry.slug, entry);
+    const key = entry.mangaTitle ? titleKey(entry.mangaTitle) : entry.slug;
+    const prev = byTitle.get(key);
+    if (!prev || entry.readAt > prev.readAt) byTitle.set(key, entry);
   }
-  return [...bySlug.values()].sort((a, b) => b.readAt - a.readAt);
+  return [...byTitle.values()].sort((a, b) => b.readAt - a.readAt);
 }
 
 export function toggleBookmark(entry: Omit<Bookmark, "addedAt">) {
