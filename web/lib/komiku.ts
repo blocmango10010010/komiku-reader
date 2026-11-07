@@ -1,58 +1,21 @@
 // Server-side scraper for komiku.org, ported from the Android app's KomikuApi.kt.
 // Runs only on the server: the site doesn't allow cross-origin requests from browsers.
 import "server-only";
-import * as cheerio from "cheerio";
 import type { CheerioAPI } from "cheerio";
 import type { AnyNode, Element } from "domhandler";
+import { fetchDoc } from "./http";
+import type { ChapterItem, ChapterPage, MangaDetail, MangaItem, SearchResult } from "./types";
 
 const BASE = "https://komiku.org";
 const API = "https://api.komiku.org";
-const UA =
-  "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
-
-export type ChapterRef = { title: string; url: string };
-export type MangaItem = {
-  title: string;
-  slug: string;
-  thumbnailUrl: string;
-  type: string;
-  latestChapter?: ChapterRef;
-  /** Relative time from the site, e.g. "3 menit lalu". */
-  updated?: string;
-};
-export type ChapterItem = { title: string; url: string; date: string };
-export type MangaDetail = {
-  title: string;
-  slug: string;
-  alternativeTitle: string;
-  type: string;
-  genre: string;
-  genres: string[];
-  author: string;
-  status: string;
-  synopsis: string;
-  thumbnailUrl: string;
-  chapters: ChapterItem[];
-};
-export type ChapterPage = {
-  /** Decoded path, e.g. "/ao-ashi-chapter-2/"; matches ChapterItem.url for history lookups. */
-  url: string;
-  mangaSlug: string;
-  mangaTitle: string;
-  chapterTitle: string;
-  imageUrls: string[];
-  prevChapterUrl: string | null;
-  nextChapterUrl: string | null;
-};
-export type SearchResult = {
-  mangaSlug: string;
-  displayTitle: string;
-  thumbnailUrl: string;
-  type: string;
-  latestChapterUrl: string | null;
-  latestChapterTitle: string;
-  updated: string;
-};
+export type {
+  ChapterItem,
+  ChapterPage,
+  ChapterRef,
+  MangaDetail,
+  MangaItem,
+  SearchResult,
+} from "./types";
 
 export const MANGA_TYPES = ["manga", "manhwa", "manhua"] as const;
 export const SORTS = ["update", "az"] as const;
@@ -74,34 +37,6 @@ function encodeSegment(segment: string): string | null {
   const s = safeDecode(segment).trim();
   if (!s || s.startsWith(".") || /[\/\\?#\s]/.test(s)) return null;
   return encodeURIComponent(s);
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function fetchDoc(url: string, revalidate: number): Promise<CheerioAPI | null> {
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": UA,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "id-ID,id;q=0.9,en;q=0.8",
-        },
-        next: { revalidate },
-      });
-      if (res.status === 404) return null;
-      const body = await res.text();
-      if (res.status === 503 || /ddos-guard/i.test(body)) {
-        await sleep(1000 * attempt);
-        continue;
-      }
-      if (!res.ok || !body.trim()) return null;
-      return cheerio.load(body, { baseURI: url });
-    } catch {
-      if (attempt < 2) await sleep(1000 * attempt);
-    }
-  }
-  return null;
 }
 
 // ---------- helpers ----------

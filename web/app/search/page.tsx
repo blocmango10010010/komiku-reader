@@ -3,7 +3,8 @@ import Link from "next/link";
 import Cover from "@/components/Cover";
 import Icon from "@/components/Icons";
 import { readHref, shortChapter } from "@/lib/format";
-import { search } from "@/lib/komiku";
+import { search } from "@/lib/sources";
+import { SOURCE_NAMES } from "@/lib/titles";
 
 export const metadata: Metadata = { title: "Cari" };
 
@@ -58,6 +59,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
               <div className="result-info">
                 <h3>{r.displayTitle}</h3>
                 <p className="muted small">{[r.type, r.updated].filter(Boolean).join(" · ")}</p>
+                {r.sources && (
+                  <p className="source-line">{r.sources.map((s) => SOURCE_NAMES[s.source]).join(" · ")}</p>
+                )}
               </div>
             </Link>
             {r.latestChapterUrl && (

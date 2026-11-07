@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import Reader from "@/components/Reader";
-import { chapterSegment, getChapter } from "@/lib/komiku";
+import { chapterSegment } from "@/lib/komiku";
+import { getChapter } from "@/lib/sources";
 
 const loadChapter = cache(getChapter);
 
