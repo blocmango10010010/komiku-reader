@@ -27,6 +27,7 @@ export type MangaDetail = {
   alternativeTitle: string;
   type: string;
   genre: string;
+  genres: string[];
   author: string;
   status: string;
   synopsis: string;
@@ -46,7 +47,10 @@ export type ChapterPage = {
 export type SearchResult = {
   mangaSlug: string;
   displayTitle: string;
+  thumbnailUrl: string;
+  type: string;
   latestChapterUrl: string | null;
+  latestChapterTitle: string;
   updated: string;
 };
 
@@ -241,21 +245,27 @@ export function parseSearchResults($: CheerioAPI): SearchResult[] {
   const seen = new Set<string>();
   $("div.bge").each((_, block) => {
     const $b = $(block);
+    // Title search links to /manga/<slug>/; the generic search only links chapters.
+    const mangaHref = $b.find("a[href*='/manga/']").first().attr("href");
     const chapterHref = $b.find("a[href*='-chapter-']").first().attr("href");
-    if (!chapterHref) return;
-    const slug = mangaSlugFromChapter(chapterHref);
+    const slug = mangaHref ? extractSlug(mangaHref) : chapterHref ? mangaSlugFromChapter(chapterHref) : "";
     if (!slug || seen.has(slug)) return;
     seen.add(slug);
 
     const kan = $b.find("div.kan").first();
     const h3 = kan.find("h3").text().trim();
     const title = !h3 || h3 === "Untitled" ? slugToTitle(slug) : h3;
-    const latest = $b.find("div.new1").last().find("a").last().attr("href");
+    const latest = $b.find("div.new1").last().find("a").last();
+    const latestHref = latest.attr("href");
+    const img = $b.find("img").first();
     results.push({
       mangaSlug: slug,
       displayTitle: title,
-      latestChapterUrl: latest ? toPath(latest) : null,
-      updated: kan.find("p").first().text().trim(),
+      thumbnailUrl: img.attr("data-src") || img.attr("src") || "",
+      type: $b.find(".tpe1_inf b").text().trim(),
+      latestChapterUrl: latestHref ? toPath(latestHref) : null,
+      latestChapterTitle: latest.find("span").last().text().trim(),
+      updated: kan.find("p").first().text().trim().replace(/\.$/, ""),
     });
   });
   return results;
@@ -305,12 +315,29 @@ export function parseMangaDetail($: CheerioAPI, slug: string): MangaDetail | nul
     alternativeTitle: pick((l) => l.includes("alternatif")),
     type: pick((l) => l.includes("tipe")),
     genre: pick((l) => l.includes("genre")),
+    genres: $("table.inftable li.genre").map((_, el) => $(el).text().trim()).get().filter(Boolean),
     author: pick((l) => l.includes("author") || l.includes("pengarang")),
     status: pick((l) => l.includes("status")),
     synopsis,
     thumbnailUrl: thumbnail,
     chapters,
   };
+}
+
+/**
+ * The manga's real slug, read from the chapter page's links to its detail page. Guessing it
+ * from the chapter URL breaks for titles like One Piece ("/one-piece-chapter-1/" belongs to
+ * "/manga/komik-one-piece-indo/").
+ */
+export function mangaSlugFromChapterPage($: CheerioAPI): string {
+  const counts = new Map<string, number>();
+  $("a[href*='/manga/']").each((_, a) => {
+    const slug = extractSlug($(a).attr("href") ?? "");
+    if (slug) counts.set(slug, (counts.get(slug) ?? 0) + 1);
+  });
+  let best = "";
+  for (const [slug, n] of counts) if (n > (counts.get(best) ?? 0)) best = slug;
+  return best;
 }
 
 export function parseChapterPage($: CheerioAPI, chapterUrl: string): ChapterPage {
@@ -339,7 +366,7 @@ export function parseChapterPage($: CheerioAPI, chapterUrl: string): ChapterPage
 
   return {
     url: toPath(chapterUrl),
-    mangaSlug: mangaSlugFromChapter(chapterUrl),
+    mangaSlug: mangaSlugFromChapterPage($) || mangaSlugFromChapter(chapterUrl),
     mangaTitle,
     chapterTitle,
     imageUrls,
@@ -382,12 +409,27 @@ export async function getMangaList(page: number, type: string, sort: Sort = "upd
 
 export async function search(query: string): Promise<SearchResult[]> {
   const q = encodeURIComponent(query);
-  for (const url of [`${API}/?s=${q}`, `${BASE}/?s=${q}&post_type=manga`]) {
-    const $ = await fetchDoc(url, DETAIL_TTL);
-    const results = $ ? parseSearchResults($) : [];
-    if (results.length) return results;
-  }
-  return [];
+  // Title search returns real slugs, covers and types. The generic search returns chapters,
+  // so it is only a fallback, with each slug resolved from the chapter page.
+  const [titles, general] = await Promise.all(
+    [`${API}/?post_type=manga&s=${q}`, `${API}/?s=${q}`].map(async (url) => {
+      const $ = await fetchDoc(url, DETAIL_TTL);
+      return $ ? parseSearchResults($) : [];
+    }),
+  );
+  if (titles.length) return titles;
+
+  const resolved = await Promise.all(
+    general.slice(0, 6).map(async (r) => {
+      if (!r.latestChapterUrl) return null;
+      const segment = chapterSegment(r.latestChapterUrl);
+      const $ = await fetchDoc(`${BASE}/${encodeURIComponent(segment)}/`, CHAPTER_TTL);
+      const slug = $ ? mangaSlugFromChapterPage($) : "";
+      return slug ? { ...r, mangaSlug: slug } : null;
+    }),
+  );
+  const seen = new Set<string>();
+  return resolved.filter((r): r is SearchResult => !!r && !seen.has(r.mangaSlug) && !!seen.add(r.mangaSlug));
 }
 
 export async function getMangaDetail(slug: string): Promise<MangaDetail | null> {

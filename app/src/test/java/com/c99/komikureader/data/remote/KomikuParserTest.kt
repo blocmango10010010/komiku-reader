@@ -144,4 +144,17 @@ class KomikuParserTest {
         assertEquals("https://t/gp.png", latest[0].thumbnailUrl)
         assertEquals("Chapter 40.2 · 3 menit lalu", latest[0].latestChapter)
     }
+
+    @Test
+    fun `title search uses the manga link slug, not the chapter url`() {
+        val results = api.parseSearchResults(doc("""
+            <div class="bge"><div class="bgei"><a href="/manga/komik-one-piece-indo/"><img src="https://t/op.jpg"></a></div>
+            <div class="kan"><a href="/manga/komik-one-piece-indo/"><h3>One Piece</h3></a><p>Update 2 hari lalu.</p>
+            <div class="new1"><a href="/one-piece-chapter-1/"><span>Awal: </span><span>Chapter 1</span></a></div>
+            <div class="new1"><a href="/one-piece-chapter-1198/"><span>Terbaru: </span><span>Chapter 1198</span></a></div>
+            </div></div>
+        """))
+        assertEquals("komik-one-piece-indo", results.single().mangaSlug)
+        assertEquals("One Piece", results.single().displayTitle)
+    }
 }

@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import ErrorNotice from "@/components/ErrorNotice";
+import Icon from "@/components/Icons";
 import MangaCard from "@/components/MangaCard";
 import { getMangaList, MANGA_TYPES, SORTS, type Sort } from "@/lib/komiku";
 
 export const metadata: Metadata = { title: "Jelajah" };
 
-const FILTERS = [
+const TYPES = [
   { type: "", label: "Semua" },
-  { type: "manga", label: "🇯🇵 Manga" },
-  { type: "manhwa", label: "🇰🇷 Manhwa" },
-  { type: "manhua", label: "🇨🇳 Manhua" },
+  { type: "manga", label: "Manga" },
+  { type: "manhwa", label: "Manhwa" },
+  { type: "manhua", label: "Manhua" },
 ];
 
 export default async function BrowsePage({
@@ -34,20 +35,23 @@ export default async function BrowsePage({
   };
 
   return (
-    <>
-      <h1 className="page-title">{sort === "update" ? "Update Terbaru" : "Komik A–Z"}</h1>
-      <div className="chips">
-        <Link href={href(1, type, "update")} className={`chip ${sort === "update" ? "active" : ""}`}>
-          🆕 Terbaru
-        </Link>
-        <Link href={href(1, type, "az")} className={`chip ${sort === "az" ? "active" : ""}`}>
-          🔤 A–Z
-        </Link>
-      </div>
-      <div className="chips">
-        {FILTERS.map((f) => (
-          <Link key={f.type} href={href(1, f.type)} className={`chip ${f.type === type ? "active" : ""}`}>
-            {f.label}
+    <div className="stack">
+      <header className="page-head">
+        <h1>Jelajah</h1>
+        <div className="segmented" role="tablist" aria-label="Urutkan">
+          <Link href={href(1, type, "update")} role="tab" aria-selected={sort === "update"}>
+            Terbaru
+          </Link>
+          <Link href={href(1, type, "az")} role="tab" aria-selected={sort === "az"}>
+            A–Z
+          </Link>
+        </div>
+      </header>
+
+      <div className="pills" role="tablist" aria-label="Tipe">
+        {TYPES.map((t) => (
+          <Link key={t.type} href={href(1, t.type)} role="tab" aria-selected={t.type === type} className="pill">
+            {t.label}
           </Link>
         ))}
       </div>
@@ -55,20 +59,35 @@ export default async function BrowsePage({
       {items === null ? (
         <ErrorNotice message="Gagal memuat daftar komik." retryHref={href(page)} />
       ) : items.length === 0 ? (
-        <p className="empty">Tidak ada komik lagi di halaman ini.</p>
+        <div className="state-box">
+          <p>Tidak ada komik lagi di halaman ini.</p>
+          <Link href={href(1)} className="btn">Ke halaman pertama</Link>
+        </div>
       ) : (
         <div className="grid">
-          {items.map((m) => (
-            <MangaCard key={m.slug} item={m} />
+          {items.map((m, i) => (
+            <MangaCard key={m.slug} item={m} eager={i < 6} />
           ))}
         </div>
       )}
 
-      <nav className="pager">
-        {page > 1 ? <Link href={href(page - 1)} className="btn">← Sebelumnya</Link> : <span />}
-        <span className="muted">Halaman {page}</span>
-        {items && items.length > 0 ? <Link href={href(page + 1)} className="btn">Berikutnya →</Link> : <span />}
+      <nav className="pager" aria-label="Halaman">
+        {page > 1 ? (
+          <Link href={href(page - 1)} className="btn" aria-label="Halaman sebelumnya">
+            <Icon name="chevron-left" size={18} /> Sebelumnya
+          </Link>
+        ) : (
+          <span />
+        )}
+        <span className="pager-page">Hal. {page}</span>
+        {items && items.length > 0 ? (
+          <Link href={href(page + 1)} className="btn" aria-label="Halaman berikutnya">
+            Berikutnya <Icon name="chevron-right" size={18} />
+          </Link>
+        ) : (
+          <span />
+        )}
       </nav>
-    </>
+    </div>
   );
 }

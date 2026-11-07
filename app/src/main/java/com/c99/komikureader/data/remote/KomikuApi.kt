@@ -124,7 +124,14 @@ class KomikuApi {
     suspend fun search(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(query, "UTF-8")
         
-        // Try API first (more reliable, bypasses DDoS-Guard)
+        // Title search links the real /manga/<slug>/ pages; the generic search only returns
+        // chapters, whose URL doesn't always match the slug (e.g. One Piece).
+        val (titleDoc, _) = fetchDoc("$apiUrl/?post_type=manga&s=$encoded")
+        if (titleDoc != null) {
+            val results = parseSearchResults(titleDoc)
+            if (results.isNotEmpty()) return@withContext results
+        }
+
         val (apiDoc, _) = fetchDoc("$apiUrl/?s=$encoded")
         if (apiDoc != null) {
             val results = parseSearchResults(apiDoc)
@@ -353,9 +360,11 @@ class KomikuApi {
         val seenSlugs = mutableSetOf<String>()
 
         doc.select("div.bge").forEach { block ->
-            val chapterLink = block.select("a[href*=-chapter-]").firstOrNull() ?: return@forEach
-            val chapterHref = chapterLink.attr("href")
-            val slug = extractMangaSlugFromChapter(chapterHref)
+            val mangaHref = block.selectFirst("a[href*=/manga/]")?.attr("href")
+            val chapterHref = block.selectFirst("a[href*=-chapter-]")?.attr("href")
+            val slug = mangaHref?.let(::extractSlug)?.ifEmpty { null }
+                ?: chapterHref?.let(::extractMangaSlugFromChapter)
+                ?: return@forEach
             if (slug.isEmpty() || slug in seenSlugs) return@forEach
             seenSlugs.add(slug)
 

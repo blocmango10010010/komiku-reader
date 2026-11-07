@@ -23,6 +23,8 @@ export type HistoryEntry = {
 
 const BOOKMARKS_KEY = "komiku:bookmarks";
 const HISTORY_KEY = "komiku:history";
+const COVERS_KEY = "komiku:covers";
+const MAX_COVERS = 500;
 const CHANGE_EVENT = "komiku:storage";
 const MAX_HISTORY = 2000;
 
@@ -60,6 +62,7 @@ function subscribe(callback: () => void) {
 
 const EMPTY_BOOKMARKS: Record<string, Bookmark> = {};
 const EMPTY_HISTORY: Record<string, HistoryEntry> = {};
+const EMPTY_COVERS: Record<string, string> = {};
 
 const historyKey = (slug: string, chapterUrl: string) => `${slug}|${chapterUrl}`;
 
@@ -141,4 +144,24 @@ export function clearHistory() {
 export function useIsBookmarked(slug: string): boolean {
   const bookmarks = useBookmarks();
   return Boolean(bookmarks[slug]);
+}
+
+/** Covers by slug, so history cards can show artwork (the reader page has no cover). */
+export function useCovers(): Record<string, string> {
+  return useSyncExternalStore(
+    subscribe,
+    () => read(COVERS_KEY, EMPTY_COVERS),
+    () => EMPTY_COVERS,
+  );
+}
+
+export function rememberCover(slug: string, url: string) {
+  if (!url) return;
+  const all = read(COVERS_KEY, EMPTY_COVERS);
+  if (all[slug] === url) return;
+  const next = { ...all, [slug]: url };
+  const keys = Object.keys(next);
+  // Insertion order approximates age; drop the oldest beyond the cap.
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_COVERS))) delete next[k];
+  write(COVERS_KEY, next);
 }
