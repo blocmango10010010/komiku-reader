@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { BookmarkButton, ChapterSection } from "@/components/DetailClient";
+import Cover from "@/components/Cover";
+import { ActionBar, ChapterList, Synopsis } from "@/components/DetailClient";
+import { coverUrl } from "@/lib/format";
 import { getMangaDetail } from "@/lib/komiku";
 
 // Shared between generateMetadata and the page so the site is fetched once per request.
@@ -18,44 +20,41 @@ export default async function MangaPage({ params }: Props) {
   const detail = await loadDetail((await params).slug);
   if (!detail) notFound();
 
-  const info = [
-    ["Tipe", detail.type],
-    ["Genre", detail.genre],
-    ["Author", detail.author],
-    ["Status", detail.status],
-  ].filter(([, v]) => v);
+  const genres = detail.genres.length ? detail.genres : detail.genre ? [detail.genre] : [];
 
   return (
-    <>
-      <div className="detail-head">
-        {/* eslint-disable-next-line @next/next/no-img-element -- images are served by the source CDN */}
-        <img src={detail.thumbnailUrl} alt={detail.title} className="detail-cover" referrerPolicy="no-referrer" />
+    <div className="detail">
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative backdrop */}
+      <img className="detail-backdrop" src={coverUrl(detail.thumbnailUrl, 300, 400)} alt="" referrerPolicy="no-referrer" />
+
+      <header className="detail-head">
+        <Cover src={detail.thumbnailUrl} title={detail.title} className="detail-cover" eager />
         <div className="detail-info">
+          <div className="tags">
+            {detail.type && <span className={`tag type-${detail.type.toLowerCase()}`}>{detail.type}</span>}
+            {detail.status && (
+              <span className={`tag ${/ongoing/i.test(detail.status) ? "tag-live" : ""}`}>{detail.status}</span>
+            )}
+          </div>
           <h1>{detail.title}</h1>
           {detail.alternativeTitle && <p className="muted small">{detail.alternativeTitle}</p>}
-          <dl>
-            {info.map(([k, v]) => (
-              <div key={k}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
-          </dl>
-          <BookmarkButton detail={detail} />
+          {detail.author && <p className="small">oleh {detail.author}</p>}
         </div>
-      </div>
+      </header>
 
-      {detail.synopsis && (
-        <details className="synopsis">
-          <summary>
-            <strong>Sinopsis</strong>
-            <span className="synopsis-preview">{detail.synopsis}</span>
-          </summary>
-          <p>{detail.synopsis}</p>
-        </details>
+      <ActionBar detail={detail} />
+
+      {genres.length > 0 && (
+        <ul className="genres" aria-label="Genre">
+          {genres.map((g) => (
+            <li key={g}>{g}</li>
+          ))}
+        </ul>
       )}
 
-      <ChapterSection detail={detail} />
-    </>
+      {detail.synopsis && <Synopsis text={detail.synopsis} />}
+
+      <ChapterList detail={detail} />
+    </div>
   );
 }

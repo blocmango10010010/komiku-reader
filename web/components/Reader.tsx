@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { shortChapter } from "@/lib/format";
 import { addHistory, getLastPage, setLastPage } from "@/lib/storage";
+import Icon from "./Icons";
 
 type Props = {
   mangaSlug: string;
@@ -21,17 +23,18 @@ export default function Reader(props: Props) {
   const [showBars, setShowBars] = useState(true);
   const [page, setPage] = useState(1);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const total = imageUrls.length;
 
   // Record the read and jump back to the saved page.
   useEffect(() => {
     addHistory(mangaSlug, chapterUrl, chapterTitle, mangaTitle);
     const saved = getLastPage(mangaSlug, chapterUrl);
-    if (saved > 0 && saved < imageUrls.length) {
+    if (saved > 0 && saved < total) {
       pageRefs.current[saved]?.scrollIntoView({ block: "start" });
     } else {
       window.scrollTo(0, 0);
     }
-  }, [mangaSlug, chapterUrl, chapterTitle, mangaTitle, imageUrls.length]);
+  }, [mangaSlug, chapterUrl, chapterTitle, mangaTitle, total]);
 
   // Track the current page and persist it (debounced).
   useEffect(() => {
@@ -54,7 +57,7 @@ export default function Reader(props: Props) {
       observer.disconnect();
       clearTimeout(timer);
     };
-  }, [mangaSlug, chapterUrl, imageUrls.length]);
+  }, [mangaSlug, chapterUrl, total]);
 
   // Keyboard navigation on desktop.
   useEffect(() => {
@@ -66,20 +69,31 @@ export default function Reader(props: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [router, nextHref, prevHref]);
 
+  const progress = total ? (Math.min(page, total) / total) * 100 : 0;
+  const detailHref = `/manga/${mangaSlug}`;
+
   return (
     <div className="reader">
-      <header className={`reader-bar top ${showBars ? "" : "hidden"}`}>
-        <Link href={`/manga/${mangaSlug}`} className="icon-btn" aria-label="Kembali ke detail">
-          ←
+      <header className={`reader-top ${showBars ? "" : "is-hidden"}`}>
+        <Link href={detailHref} className="icon-btn" aria-label="Kembali ke detail">
+          <Icon name="arrow-left" />
         </Link>
         <div className="reader-titles">
-          <span className="muted small">{mangaTitle}</span>
-          <strong>{chapterTitle}</strong>
+          <span>{mangaTitle}</span>
+          <strong>{shortChapter(chapterTitle)}</strong>
+        </div>
+        <Link href={detailHref} className="icon-btn" aria-label="Daftar chapter">
+          <Icon name="list" />
+        </Link>
+        <div className="reader-progress" aria-hidden="true">
+          <span style={{ width: `${progress}%` }} />
         </div>
       </header>
 
-      {imageUrls.length === 0 ? (
-        <p className="center muted pad">Tidak ada gambar di chapter ini.</p>
+      {total === 0 ? (
+        <div className="state-box">
+          <p>Tidak ada gambar di chapter ini.</p>
+        </div>
       ) : (
         <div className="pages" onClick={() => setShowBars((s) => !s)}>
           {imageUrls.map((url, i) => (
@@ -91,7 +105,7 @@ export default function Reader(props: Props) {
                 pageRefs.current[i] = el;
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element -- images are served by the source CDN */}
+              {/* eslint-disable-next-line @next/next/no-img-element -- pages are served by the source CDN */}
               <img
                 src={url}
                 alt={`Halaman ${i + 1}`}
@@ -104,41 +118,44 @@ export default function Reader(props: Props) {
         </div>
       )}
 
-      <div className="end-of-chapter">
-        <p>Akhir chapter</p>
+      <section className="chapter-end">
+        <span className="label">Selesai</span>
+        <h2>{shortChapter(chapterTitle)}</h2>
         {nextHref ? (
-          <Link href={nextHref} className="btn primary wide">
-            Chapter Selanjutnya →
+          <Link href={nextHref} className="btn btn-primary btn-lg wide">
+            Chapter Selanjutnya <Icon name="chevron-right" size={18} />
           </Link>
         ) : (
-          <>
-            <p className="muted small">Ini chapter terbaru</p>
-            <Link href={`/manga/${mangaSlug}`} className="btn wide">
-              Kembali ke Detail
-            </Link>
-          </>
+          <p className="muted">Kamu sudah di chapter terbaru.</p>
         )}
-      </div>
+        <Link href={detailHref} className="btn btn-lg wide">
+          Kembali ke Detail
+        </Link>
+      </section>
 
-      <footer className={`reader-bar bottom ${showBars ? "" : "hidden"}`}>
+      <nav className={`reader-dock ${showBars ? "" : "is-hidden"}`} aria-label="Navigasi chapter">
         {prevHref ? (
-          <Link href={prevHref} className="icon-btn" aria-label="Chapter sebelumnya">
-            ⏮
+          <Link href={prevHref} className="dock-btn" aria-label="Chapter sebelumnya">
+            <Icon name="chevron-left" size={22} />
           </Link>
         ) : (
-          <span className="icon-btn disabled">⏮</span>
+          <span className="dock-btn is-disabled" aria-hidden="true">
+            <Icon name="chevron-left" size={22} />
+          </span>
         )}
-        <span className="page-indicator">
-          {Math.min(page, imageUrls.length)} / {imageUrls.length}
+        <span className="dock-page">
+          {Math.min(page, total)} <span>/ {total}</span>
         </span>
         {nextHref ? (
-          <Link href={nextHref} className="icon-btn" aria-label="Chapter selanjutnya">
-            ⏭
+          <Link href={nextHref} className="dock-btn" aria-label="Chapter selanjutnya">
+            <Icon name="chevron-right" size={22} />
           </Link>
         ) : (
-          <span className="icon-btn disabled">⏭</span>
+          <span className="dock-btn is-disabled" aria-hidden="true">
+            <Icon name="chevron-right" size={22} />
+          </span>
         )}
-      </footer>
+      </nav>
     </div>
   );
 }

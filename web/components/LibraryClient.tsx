@@ -2,110 +2,150 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { readHref, shortChapter, timeAgo } from "@/lib/format";
 import {
   clearHistory,
   latestPerManga,
   removeBookmark,
   useBookmarks,
+  useCovers,
   useHistory,
-  type HistoryEntry,
+  type Bookmark,
 } from "@/lib/storage";
-
-const chapterHref = (url: string) => `/read/${url.replace(/^\/+|\/+$/g, "")}`;
+import Cover from "./Cover";
+import Icon from "./Icons";
 
 export function ContinueReading() {
-  const recent = latestPerManga(useHistory()).slice(0, 10);
-  if (!recent.length) return null;
+  const history = latestPerManga(useHistory()).slice(0, 10);
+  const covers = useCovers();
+  if (!history.length) return null;
   return (
     <section>
-      <h2 className="section-title">📖 Lanjutkan Membaca</h2>
+      <div className="section-head">
+        <h2>
+          <Icon name="history" size={20} className="accent" /> Lanjutkan Membaca
+        </h2>
+        <Link href="/library?tab=history" className="link-more">
+          Riwayat <Icon name="chevron-right" size={16} />
+        </Link>
+      </div>
       <div className="row-scroll">
-        {recent.map((h) => (
-          <ContinueCard key={h.slug} entry={h} />
+        {history.map((h) => (
+          <Link key={h.slug} href={readHref(h.chapterUrl)} className="continue">
+            <Cover src={covers[h.slug] ?? ""} title={h.mangaTitle || h.slug} className="continue-cover" />
+            <div className="continue-info">
+              <strong className="clamp-2">{h.mangaTitle || h.slug}</strong>
+              <span className="accent small">
+                <Icon name="play" size={12} /> {shortChapter(h.chapterTitle) || "Lanjutkan"}
+              </span>
+              <span className="muted xsmall">{timeAgo(h.readAt)}</span>
+            </div>
+          </Link>
         ))}
       </div>
     </section>
   );
 }
 
-function ContinueCard({ entry }: { entry: HistoryEntry }) {
+function BookmarkGrid({ bookmarks }: { bookmarks: Bookmark[] }) {
+  if (!bookmarks.length) {
+    return (
+      <div className="state-box">
+        <span className="state-icon">
+          <Icon name="bookmark" size={28} />
+        </span>
+        <p>Belum ada komik di koleksi.</p>
+        <p className="muted small">Ketuk ikon bookmark di halaman detail komik untuk menyimpannya di sini.</p>
+        <Link href="/browse" className="btn btn-primary">
+          Jelajahi Komik
+        </Link>
+      </div>
+    );
+  }
   return (
-    <Link href={chapterHref(entry.chapterUrl)} className="continue-card">
-      <strong className="ellipsis">{entry.mangaTitle || entry.slug}</strong>
-      <span className="accent small ellipsis">▶ {entry.chapterTitle || "Lanjutkan"}</span>
-    </Link>
+    <div className="grid">
+      {bookmarks.map((b) => (
+        <article key={b.slug} className="card">
+          <Link href={`/manga/${b.slug}`} className="card-link">
+            <div className="card-cover">
+              <Cover src={b.thumbnailUrl} title={b.title} />
+              {b.type && <span className={`type-tag type-${b.type.toLowerCase()}`}>{b.type}</span>}
+            </div>
+            <h3 className="card-title">{b.title}</h3>
+          </Link>
+          <button
+            type="button"
+            className="card-remove"
+            aria-label={`Hapus ${b.title} dari koleksi`}
+            onClick={() => removeBookmark(b.slug)}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </article>
+      ))}
+    </div>
   );
 }
 
-export function Library() {
-  const [tab, setTab] = useState<"bookmarks" | "history">("bookmarks");
-  const bookmarks = Object.values(useBookmarks()).sort((a, b) => b.addedAt - a.addedAt);
+export function Library({ initialTab }: { initialTab: "bookmarks" | "history" }) {
+  const [tab, setTab] = useState(initialTab);
+  const bookmarkMap = useBookmarks();
+  const bookmarks = Object.values(bookmarkMap).sort((a, b) => b.addedAt - a.addedAt);
   const history = latestPerManga(useHistory());
+  const covers = useCovers();
 
   return (
-    <>
-      <div className="tabs" role="tablist">
+    <div className="stack">
+      <div className="segmented full" role="tablist">
         <button role="tab" aria-selected={tab === "bookmarks"} onClick={() => setTab("bookmarks")}>
-          Bookmark ({bookmarks.length})
+          Koleksi <span className="count">{bookmarks.length}</span>
         </button>
         <button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
-          Riwayat ({history.length})
+          Riwayat <span className="count">{history.length}</span>
         </button>
       </div>
 
-      {tab === "bookmarks" &&
-        (bookmarks.length === 0 ? (
-          <p className="empty">Belum ada bookmark. Tambahkan dari halaman detail komik.</p>
-        ) : (
-          <ul className="list">
-            {bookmarks.map((b) => (
-              <li key={b.slug} className="list-row">
-                <Link href={`/manga/${b.slug}`} className="list-main">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={b.thumbnailUrl} alt="" className="thumb-sm" referrerPolicy="no-referrer" />
-                  <span>
-                    <strong>{b.title}</strong>
-                    <span className="muted small block">{[b.type, b.status].filter(Boolean).join(" · ")}</span>
-                  </span>
-                </Link>
-                <button className="icon-btn" aria-label={`Hapus ${b.title}`} onClick={() => removeBookmark(b.slug)}>
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        ))}
+      {tab === "bookmarks" && <BookmarkGrid bookmarks={bookmarks} />}
 
       {tab === "history" &&
         (history.length === 0 ? (
-          <p className="empty">Belum ada riwayat baca.</p>
+          <div className="state-box">
+            <span className="state-icon">
+              <Icon name="history" size={28} />
+            </span>
+            <p>Belum ada riwayat baca.</p>
+          </div>
         ) : (
           <>
-            <ul className="list">
+            <ul className="history-list">
               {history.map((h) => (
-                <li key={h.slug} className="list-row">
-                  <Link href={`/manga/${h.slug}`} className="list-main">
-                    <span>
-                      <strong>{h.mangaTitle || h.slug}</strong>
-                      <span className="muted small block">{new Date(h.readAt).toLocaleString("id-ID")}</span>
-                    </span>
+                <li key={h.slug} className="history-row">
+                  <Link href={`/manga/${h.slug}`} className="history-main">
+                    <Cover src={covers[h.slug] ?? bookmarkMap[h.slug]?.thumbnailUrl ?? ""} title={h.mangaTitle || h.slug} className="history-cover" />
+                    <div>
+                      <strong className="clamp-1">{h.mangaTitle || h.slug}</strong>
+                      <span className="muted small block">
+                        {shortChapter(h.chapterTitle)} · {timeAgo(h.readAt)}
+                      </span>
+                    </div>
                   </Link>
-                  <Link href={chapterHref(h.chapterUrl)} className="btn small-btn">
-                    {h.chapterTitle || "Lanjutkan"}
+                  <Link href={readHref(h.chapterUrl)} className="btn btn-soft btn-sm" aria-label={`Lanjutkan ${h.mangaTitle}`}>
+                    <Icon name="play" size={14} /> Lanjut
                   </Link>
                 </li>
               ))}
             </ul>
             <button
-              className="btn wide"
+              type="button"
+              className="btn btn-ghost-danger"
               onClick={() => {
                 if (confirm("Hapus semua riwayat baca?")) clearHistory();
               }}
             >
-              Hapus Riwayat
+              <Icon name="trash" size={16} /> Hapus Riwayat
             </button>
           </>
         ))}
-    </>
+    </div>
   );
 }

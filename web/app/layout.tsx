@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import Link from "next/link";
+import { Plus_Jakarta_Sans } from "next/font/google";
+import { BottomNav, TopBar } from "@/components/Nav";
 import "./globals.css";
+
+const font = Plus_Jakarta_Sans({ subsets: ["latin"], display: "swap", variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: { default: "Komiku Reader", template: "%s · Komiku Reader" },
@@ -8,26 +11,19 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#121212",
+  themeColor: "#0b0b12",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id">
+    <html lang="id" className={font.variable}>
       <body>
-        <header className="topbar">
-          <Link href="/" className="brand">
-            Komiku Reader
-          </Link>
-          <nav>
-            <Link href="/browse">Jelajah</Link>
-            <Link href="/search">Cari</Link>
-            <Link href="/library">Koleksi</Link>
-          </nav>
-        </header>
+        <TopBar />
         <main className="container">{children}</main>
+        <BottomNav />
       </body>
     </html>
   );

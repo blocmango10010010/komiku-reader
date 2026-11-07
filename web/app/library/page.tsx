@@ -3,12 +3,15 @@ import { Library } from "@/components/LibraryClient";
 
 export const metadata: Metadata = { title: "Koleksi" };
 
-export default function LibraryPage() {
+export default async function LibraryPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const tab = (await searchParams).tab === "history" ? "history" : "bookmarks";
   return (
-    <>
-      <h1 className="page-title">Koleksi Saya</h1>
-      <p className="muted small">Bookmark dan riwayat disimpan di browser ini.</p>
-      <Library />
-    </>
+    <div className="stack">
+      <header className="page-head">
+        <h1>Koleksi</h1>
+        <span className="muted small">Tersimpan di browser ini</span>
+      </header>
+      <Library key={tab} initialTab={tab} />
+    </div>
   );
 }
